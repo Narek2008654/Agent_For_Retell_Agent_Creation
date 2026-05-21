@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import type { AiClient, ChatMessage } from "../ai/client.js";
 import { searchMemories, addMemory } from "../memory/store.js";
 import { buildPrompt } from "../chat/prompt.js";
+import { generateChatTitle } from "../chat/title.js";
 import { extractFacts } from "../memory/extract.js";
 
 const streamBodySchema = z.object({
@@ -41,6 +42,7 @@ export function createStreamRouter(getAi: () => AiClient): Router {
     let ai: AiClient;
     let system: string;
     let messages: ChatMessage[];
+    let isFirstTurn = false;
     try {
       // 2. Load prior history BEFORE inserting the new user message
       const priorMessages = await prisma.message.findMany({
@@ -49,6 +51,8 @@ export function createStreamRouter(getAi: () => AiClient): Router {
         take: 20,
         select: { role: true, content: true },
       });
+
+      isFirstTurn = priorMessages.length === 0;
 
       const priorHistory: ChatMessage[] = priorMessages.map((m) => ({
         role: m.role as "user" | "assistant",
@@ -85,6 +89,13 @@ export function createStreamRouter(getAi: () => AiClient): Router {
       aborted = true;
     });
 
+    // On the first turn, generate a ChatGPT-style title from the opening message,
+    // overlapped with the response stream so it adds no perceived latency.
+    // Best-effort: a title failure must never break the reply.
+    const titlePromise = isFirstTurn
+      ? generateChatTitle(ai, content).catch(() => null)
+      : null;
+
     let full = "";
 
     try {
@@ -101,6 +112,13 @@ export function createStreamRouter(getAi: () => AiClient): Router {
       await prisma.message.create({
         data: { chatId, role: "assistant", content: full },
       });
+
+      // Apply the generated title before signalling done, so the client's
+      // chat-list refetch (triggered on "done") shows the new title.
+      if (titlePromise) {
+        const title = await titlePromise;
+        if (title) await prisma.chat.update({ where: { id: chatId }, data: { title } });
+      }
 
       res.write("event: done\ndata: {}\n\n");
       res.end();
