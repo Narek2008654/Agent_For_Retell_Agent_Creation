@@ -24,7 +24,7 @@ export function createStreamRouter(getAi: () => AiClient): Router {
     }
 
     const { content } = parsed.data;
-    const chatId = req.params.id;
+    const chatId = req.params.id as string;
 
     // 1. Verify the chat exists and is owned by the user
     const chat = await prisma.chat.findFirst({
