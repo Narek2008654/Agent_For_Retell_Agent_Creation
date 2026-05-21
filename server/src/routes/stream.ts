@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
-import { requireAuth } from "../middleware/requireAuth.js";
 import type { AiClient } from "../ai/client.js";
 import { searchMemories, addMemory } from "../memory/store.js";
 import { buildPrompt } from "../chat/prompt.js";
@@ -15,8 +14,9 @@ const streamBodySchema = z.object({
 export function createStreamRouter(getAi: () => AiClient): Router {
   const router = Router();
 
-  // POST /:id/stream — SSE streaming turn
-  router.post("/:id/stream", requireAuth, async (req, res) => {
+  // POST /:id/stream — SSE streaming turn.
+  // Auth is applied by the parent chats router (router.use(requireAuth)).
+  router.post("/:id/stream", async (req, res) => {
     const parsed = streamBodySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
@@ -68,13 +68,23 @@ export function createStreamRouter(getAi: () => AiClient): Router {
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders();
 
+    // Stop streaming if the client disconnects mid-turn.
+    let aborted = false;
+    req.on("close", () => {
+      aborted = true;
+    });
+
     let full = "";
 
     try {
       for await (const chunk of ai.streamChat({ system, messages })) {
+        if (aborted) break;
         full += chunk;
         res.write("data: " + JSON.stringify({ text: chunk }) + "\n\n");
       }
+
+      // If the client went away, stop without writing to a dead socket.
+      if (aborted) return;
 
       // 7. Save assistant message AFTER stream ends
       await prisma.message.create({

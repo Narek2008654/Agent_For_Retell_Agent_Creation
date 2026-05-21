@@ -76,18 +76,17 @@ export function createChatsRouter(getAi: () => AiClient): Router {
     res.json(chat);
   });
 
-  // DELETE /:id — delete if owned
+  // DELETE /:id — delete if owned (owner-scoped, atomic)
   router.delete("/:id", async (req, res) => {
-    const chat = await prisma.chat.findFirst({
+    const { count } = await prisma.chat.deleteMany({
       where: { id: req.params.id, userId: req.user!.id },
     });
 
-    if (!chat) {
+    if (count === 0) {
       res.status(404).json({ error: "not found" });
       return;
     }
 
-    await prisma.chat.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
   });
 
