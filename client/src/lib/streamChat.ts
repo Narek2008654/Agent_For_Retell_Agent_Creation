@@ -88,7 +88,12 @@ export async function streamChat(
         }
       }
     }
+
+    // Flush any trailing bytes held by the TextDecoder (e.g. incomplete multi-byte sequences)
+    buffer += decoder.decode();
   } catch (err) {
     handlers.onError(String(err));
+  } finally {
+    reader.cancel().catch(() => {});
   }
 }

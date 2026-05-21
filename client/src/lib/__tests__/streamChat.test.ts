@@ -65,4 +65,41 @@ describe("streamChat", () => {
     expect(onDone).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
   });
+
+  it("calls onError and not onChunk/onDone when response is not ok", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        text: async () => "boom",
+      } as unknown as Response),
+    );
+
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+    const onError = vi.fn();
+
+    await streamChat("chat-1", "hi", { onChunk, onDone, onError });
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onChunk).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("calls onError with error message for event:error frame and does not call onDone", async () => {
+    const sse = 'event: error\ndata: {"error":"model exploded"}\n\n';
+
+    vi.stubGlobal("fetch", () => makeFetchOk(makeStream([sse])));
+
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+    const onError = vi.fn();
+
+    await streamChat("chat-1", "hi", { onChunk, onDone, onError });
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith("model exploded");
+    expect(onDone).not.toHaveBeenCalled();
+  });
 });

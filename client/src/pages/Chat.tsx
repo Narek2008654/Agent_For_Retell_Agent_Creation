@@ -67,12 +67,12 @@ export function Chat() {
       onChunk: (chunk) => {
         setStreaming((s) => s + chunk);
       },
-      onDone: () => {
-        setIsStreaming(false);
-        setStreaming("");
-        setOptimisticMessages([]);
-        void queryClient.invalidateQueries({ queryKey: ["messages", activeChatId] });
+      onDone: async () => {
+        await queryClient.invalidateQueries({ queryKey: ["messages", activeChatId] });
         void queryClient.invalidateQueries({ queryKey: ["chats"] });
+        setOptimisticMessages([]);
+        setStreaming("");
+        setIsStreaming(false);
       },
       onError: (err) => {
         setIsStreaming(false);
