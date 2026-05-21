@@ -22,13 +22,14 @@ export interface Memory {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const { headers: callerHeaders, ...restOptions } = options ?? {};
   const res = await fetch(`${API_URL}${path}`, {
     credentials: "include",
+    ...restOptions,
     headers: {
       "Content-Type": "application/json",
-      ...(options?.headers as Record<string, string> | undefined),
+      ...(callerHeaders as Record<string, string> | undefined),
     },
-    ...options,
   });
 
   if (!res.ok) {
