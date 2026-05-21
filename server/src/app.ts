@@ -7,6 +7,7 @@ import { requireAuth } from "./middleware/requireAuth.js";
 import type { AiClient } from "./ai/client.js";
 import { createOpenAiClient } from "./ai/client.js";
 import { createChatsRouter } from "./routes/chats.js";
+import { createMemoryRouter } from "./routes/memory.js";
 
 export function createApp(opts: { ai?: AiClient } = {}) {
   let cachedReal: AiClient | undefined;
@@ -34,6 +35,7 @@ export function createApp(opts: { ai?: AiClient } = {}) {
   });
 
   app.use("/api/chats", createChatsRouter(getAi));
+  app.use("/api/memory", createMemoryRouter());
 
   return app;
 }
