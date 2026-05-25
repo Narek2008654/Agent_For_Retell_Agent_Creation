@@ -8,6 +8,15 @@ const createChatSchema = z.object({
   title: z.string().default("New chat"),
 });
 
+// Fields returned for a chat across create/list/get. Kept in one place so the
+// shape stays consistent. `as const` preserves the literal types Prisma needs.
+const chatSelect = {
+  id: true,
+  title: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 export function createChatsRouter(getAi: () => AiClient): Router {
   const router = Router();
 
@@ -25,12 +34,7 @@ export function createChatsRouter(getAi: () => AiClient): Router {
         userId: req.userId!,
         title,
       },
-      select: {
-        id: true,
-        title: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: chatSelect,
     });
 
     res.json(chat);
@@ -41,12 +45,7 @@ export function createChatsRouter(getAi: () => AiClient): Router {
     const chats = await prisma.chat.findMany({
       where: { userId: req.userId! },
       orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: chatSelect,
     });
 
     res.json(chats);
@@ -56,12 +55,7 @@ export function createChatsRouter(getAi: () => AiClient): Router {
   router.get("/:id", async (req, res) => {
     const chat = await prisma.chat.findFirst({
       where: { id: req.params.id, userId: req.userId! },
-      select: {
-        id: true,
-        title: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: chatSelect,
     });
 
     if (!chat) {
@@ -106,6 +100,9 @@ export function createChatsRouter(getAi: () => AiClient): Router {
         role: true,
         content: true,
         createdAt: true,
+        attachments: {
+          select: { id: true, filename: true, mimeType: true },
+        },
       },
     });
 

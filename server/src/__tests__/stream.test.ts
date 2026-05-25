@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import request from "supertest";
 import { createApp } from "../app.js";
 import { prisma } from "../db.js";
@@ -9,9 +10,24 @@ const app = createApp({ ai: createFakeAi(), requireAuth: fakeAuth });
 const USER1 = "user_test_stream_1";
 const USER2 = "user_test_stream_2";
 
+// 1x1 transparent PNG
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 let chatId: string;
 
 async function cleanup() {
+  const atts = await prisma.attachment.findMany({ where: { userId: { in: [USER1, USER2] } } });
+  for (const a of atts) {
+    try {
+      fs.unlinkSync(a.storedPath);
+    } catch {
+      // file may already be gone
+    }
+  }
+  await prisma.attachment.deleteMany({ where: { userId: { in: [USER1, USER2] } } });
   await prisma.chat.deleteMany({ where: { userId: { in: [USER1, USER2] } } });
 }
 
@@ -125,4 +141,54 @@ test("POST /api/chats/:id/stream returns 404 when another user streams to user1'
 
   expect(res.status).toBe(404);
   expect(res.body).toEqual({ error: "not found" });
+});
+
+test("POST /api/chats/:id/stream links attachments and forwards image data URLs to the AI", async () => {
+  // A fake AI that records the streamChat input it receives.
+  let captured: { system: string; messages: import("../ai/client.js").ChatMessage[] } | null = null;
+  const capturingApp = createApp({
+    ai: createFakeAi({
+      // eslint-disable-next-line require-yield
+      streamChat: async function* (input) {
+        captured = input;
+        return; // no chunks needed for this assertion
+      },
+    }),
+    requireAuth: fakeAuth,
+  });
+
+  const chatRes = await request(capturingApp)
+    .post("/api/chats")
+    .set("x-test-user-id", USER1)
+    .send({ title: "Vision Chat" });
+  const visionChatId = chatRes.body.id;
+
+  const up = await request(capturingApp)
+    .post("/api/uploads")
+    .set("x-test-user-id", USER1)
+    .attach("file", PNG, { filename: "pic.png", contentType: "image/png" });
+  const attachmentId = up.body.id;
+
+  await request(capturingApp)
+    .post(`/api/chats/${visionChatId}/stream`)
+    .set("x-test-user-id", USER1)
+    .send({ content: "what is this", attachmentIds: [attachmentId] });
+
+  // The attachment is now linked to the user message
+  const att = await prisma.attachment.findUnique({ where: { id: attachmentId } });
+  expect(att?.messageId).not.toBeNull();
+
+  // The AI received the image as a data URL on the final user message
+  expect(captured).not.toBeNull();
+  const last = captured!.messages[captured!.messages.length - 1];
+  expect(last.imageDataUrls).toHaveLength(1);
+  expect(last.imageDataUrls![0]).toMatch(/^data:image\/png;base64,/);
+
+  // getMessages returns the attachment on the user message
+  const msgs = await request(capturingApp)
+    .get(`/api/chats/${visionChatId}/messages`)
+    .set("x-test-user-id", USER1);
+  const userMsg = msgs.body.find((m: { role: string }) => m.role === "user");
+  expect(userMsg.attachments).toHaveLength(1);
+  expect(userMsg.attachments[0].id).toBe(attachmentId);
 });

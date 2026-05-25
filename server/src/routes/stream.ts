@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import fs from "node:fs";
 import { prisma } from "../db.js";
 import type { AiClient, ChatMessage } from "../ai/client.js";
 import { searchMemories, addMemory } from "../memory/store.js";
@@ -9,6 +10,7 @@ import { extractFacts } from "../memory/extract.js";
 
 const streamBodySchema = z.object({
   content: z.string().min(1),
+  attachmentIds: z.array(z.string()).max(5).optional(),
 });
 
 export function createStreamRouter(getAi: () => AiClient): Router {
@@ -23,7 +25,7 @@ export function createStreamRouter(getAi: () => AiClient): Router {
       return;
     }
 
-    const { content } = parsed.data;
+    const { content, attachmentIds } = parsed.data;
     const chatId = req.params.id as string;
 
     // 1. Verify the chat exists and is owned by the user
@@ -59,18 +61,36 @@ export function createStreamRouter(getAi: () => AiClient): Router {
         content: m.content,
       }));
 
-      // 3. Insert the new user message
-      await prisma.message.create({
+      // 3. Insert the new user message (capture id for attachment linking)
+      const userMessage = await prisma.message.create({
         data: { chatId, role: "user", content },
+        select: { id: true },
       });
+
+      // 3b. Link any uploaded images to this message and load them as data URLs
+      let images: string[] = [];
+      if (attachmentIds && attachmentIds.length > 0) {
+        const atts = await prisma.attachment.findMany({
+          where: { id: { in: attachmentIds }, userId: req.userId!, messageId: null },
+        });
+        if (atts.length > 0) {
+          await prisma.attachment.updateMany({
+            where: { id: { in: atts.map((a) => a.id) } },
+            data: { messageId: userMessage.id },
+          });
+          images = atts
+            .filter((a) => fs.existsSync(a.storedPath))
+            .map((a) => `data:${a.mimeType};base64,${fs.readFileSync(a.storedPath).toString("base64")}`);
+        }
+      }
 
       ai = getAi();
 
       // 4. Search memories
       const facts = await searchMemories(ai, req.userId!, content, 5);
 
-      // 5. Build prompt
-      ({ system, messages } = buildPrompt({ facts, history: priorHistory, message: content }));
+      // 5. Build prompt (with any attached images for vision)
+      ({ system, messages } = buildPrompt({ facts, history: priorHistory, message: content, images }));
     } catch (err) {
       const message = err instanceof Error ? err.message : "failed to prepare turn";
       res.status(500).json({ error: message });
@@ -125,7 +145,7 @@ export function createStreamRouter(getAi: () => AiClient): Router {
 
       // 8. Fire-and-forget memory capture
       extractFacts(ai, content, full)
-        .then((fs) => Promise.all(fs.map((f) => addMemory(ai, req.userId!, f))))
+        .then((newFacts) => Promise.all(newFacts.map((f) => addMemory(ai, req.userId!, f))))
         .catch(() => {});
     } catch (err) {
       const message = err instanceof Error ? err.message : "stream error";
