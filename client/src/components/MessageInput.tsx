@@ -2,8 +2,9 @@ import { useState, useRef, type KeyboardEvent, type DragEvent } from "react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { SendHorizonal, Paperclip, X } from "lucide-react";
+import { SendHorizonal, Paperclip, X, Mic } from "lucide-react";
 import { useApi } from "@/lib/useApi";
+import { useDictation } from "@/lib/useDictation";
 
 const MAX_IMAGES = 5;
 
@@ -24,6 +25,11 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
   const [pending, setPending] = useState<PendingImage[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const dictation = useDictation({
+    onResult: (text) => setValue((v) => (v ? `${v} ${text}` : text)),
+    onError: (message) => toast.error(message),
+  });
 
   async function uploadFiles(files: File[]) {
     const images = files.filter((f) => f.type.startsWith("image/"));
@@ -127,6 +133,18 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
         >
           <Paperclip />
         </Button>
+        {dictation.supported && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => (dictation.listening ? dictation.stop() : dictation.start())}
+            disabled={disabled}
+            aria-label={dictation.listening ? "Stop dictation" : "Start dictation"}
+            className={dictation.listening ? "animate-pulse text-destructive" : undefined}
+          >
+            <Mic />
+          </Button>
+        )}
         <Textarea
           placeholder="Message…"
           value={value}
