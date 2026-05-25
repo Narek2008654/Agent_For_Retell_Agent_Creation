@@ -8,6 +8,8 @@ import type { AiClient } from "./ai/client.js";
 import { createOpenAiClient } from "./ai/client.js";
 import { createChatsRouter } from "./routes/chats.js";
 import { createMemoryRouter } from "./routes/memory.js";
+import { createUploadsRouter } from "./routes/uploads.js";
+import { createFilesRouter } from "./routes/files.js";
 
 export function createApp(opts: { ai?: AiClient; requireAuth?: RequestHandler } = {}) {
   let cachedReal: AiClient | undefined;
@@ -36,6 +38,8 @@ export function createApp(opts: { ai?: AiClient; requireAuth?: RequestHandler } 
 
   app.use("/api/chats", guard, createChatsRouter(getAi));
   app.use("/api/memory", guard, createMemoryRouter());
+  app.use("/api/uploads", guard, createUploadsRouter());
+  app.use("/api/files", guard, createFilesRouter());
 
   return app;
 }
