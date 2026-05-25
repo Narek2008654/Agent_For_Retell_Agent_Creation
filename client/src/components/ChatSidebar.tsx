@@ -19,10 +19,10 @@ export function ChatSidebar({ selectedId, onSelect, onDeselect }: ChatSidebarPro
     queryFn: api.getChats,
   });
 
-  async function handleNewChat() {
-    const chat = await api.createChat();
-    await queryClient.invalidateQueries({ queryKey: ["chats"] });
-    onSelect(chat.id);
+  // Open a blank draft instead of creating a row now — the chat is persisted on
+  // the first sent message, so empty/unused conversations are never stored.
+  function handleNewChat() {
+    onDeselect();
   }
 
   async function handleDelete(id: string, e: React.MouseEvent) {
