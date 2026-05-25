@@ -37,11 +37,19 @@ export function toOpenAiMessages(system: string, messages: ChatMessage[]): OpenA
   return out;
 }
 
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>; // JSON Schema for the arguments
+  run: (args: Record<string, unknown>) => Promise<string>;
+}
+
 export interface AiClient {
   embed(text: string): Promise<number[]>;
   streamChat(input: {
     system: string;
     messages: ChatMessage[];
+    tools?: ToolDefinition[];
   }): AsyncIterable<string>;
   complete(prompt: string): Promise<string>;
 }
@@ -61,20 +69,68 @@ export function createOpenAiClient(apiKey: string): AiClient {
     async *streamChat({
       system,
       messages,
+      tools,
     }: {
       system: string;
       messages: ChatMessage[];
+      tools?: ToolDefinition[];
     }): AsyncGenerator<string> {
-      const stream = await openai.chat.completions.create({
-        model: env.CHAT_MODEL,
-        messages: toOpenAiMessages(system, messages) as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-        stream: true,
-      });
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content ?? "";
-        if (delta) {
-          yield delta;
+      const oaTools = tools?.map((t) => ({
+        type: "function" as const,
+        function: { name: t.name, description: t.description, parameters: t.parameters },
+      }));
+      const convo = toOpenAiMessages(system, messages) as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+
+      // Loop so the model can call tools and then produce a final answer.
+      // Capped to avoid runaway tool loops.
+      for (let iteration = 0; iteration < 3; iteration++) {
+        const stream = await openai.chat.completions.create({
+          model: env.CHAT_MODEL,
+          messages: convo,
+          tools: oaTools,
+          stream: true,
+        });
+
+        const toolCalls: Record<number, { id: string; name: string; args: string }> = {};
+        let assistantText = "";
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta;
+          if (delta?.content) {
+            assistantText += delta.content;
+            yield delta.content;
+          }
+          for (const tc of delta?.tool_calls ?? []) {
+            const call = (toolCalls[tc.index] ??= { id: "", name: "", args: "" });
+            if (tc.id) call.id = tc.id;
+            if (tc.function?.name) call.name += tc.function.name;
+            if (tc.function?.arguments) call.args += tc.function.arguments;
+          }
         }
+
+        const calls = Object.values(toolCalls);
+        if (calls.length === 0) return; // plain answer; already streamed
+
+        convo.push({
+          role: "assistant",
+          content: assistantText || null,
+          tool_calls: calls.map((c) => ({
+            id: c.id,
+            type: "function",
+            function: { name: c.name, arguments: c.args },
+          })),
+        });
+
+        for (const c of calls) {
+          const tool = tools?.find((t) => t.name === c.name);
+          let result: string;
+          try {
+            result = tool ? await tool.run(JSON.parse(c.args || "{}")) : `Unknown tool: ${c.name}`;
+          } catch (err) {
+            result = `Error: ${err instanceof Error ? err.message : String(err)}`;
+          }
+          convo.push({ role: "tool", tool_call_id: c.id, content: result });
+        }
+        // Next iteration streams the follow-up (user-facing) reply.
       }
     },
 
