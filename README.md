@@ -101,6 +101,7 @@ chatbot/
 | `VITE_CLERK_PUBLISHABLE_KEY` | client | Clerk publishable key (for `<ClerkProvider>`) |
 | `CHAT_MODEL` | server | Chat model (default `gpt-4o-mini`) |
 | `EMBEDDING_MODEL` | server | Embedding model (default `text-embedding-3-small`, 1536-dim) |
+| `RETELL_API_KEY` | server | RetellAI key — lets the bot create voice agents (optional) |
 | `VITE_API_URL` | client | Base URL of the API server |
 
 ## Scripts
@@ -123,6 +124,14 @@ chatbot/
   The database must be running (`npm run db:up`) for the integration tests.
 - **Client** — Vitest + React Testing Library for the SSE parser, the token-binding `useApi`
   hook, and the memory page (Clerk is mocked in tests).
+
+## Voice agents (RetellAI)
+
+With `RETELL_API_KEY` set, ask the chatbot to "create a voice agent." It interviews you for the
+agent's name, purpose, behavior, greeting, when to end the call, and a voice, then calls a
+`create_retell_voice_agent` tool that creates the agent on RetellAI (a Retell LLM + an agent) and
+reports the `agent_id`. Implemented via OpenAI tool calling — see
+`server/src/retell/client.ts` and the tool in `server/src/routes/stream.ts`.
 
 ## Notes
 
