@@ -1,3 +1,8 @@
+# Pinned project name so the DB volume stays the same regardless of the folder
+# name (Compose otherwise derives the project — and thus the volume — from the
+# directory, so renaming the folder would orphan the existing data).
+name: chatbot
+
 services:
   db:
     image: pgvector/pgvector:pg16
