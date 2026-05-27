@@ -92,6 +92,11 @@ const PLACE_CALL_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
           description:
             "Optional id of the agent that should handle the call. Omit to use the agent already assigned to from_number.",
         },
+        person_email: {
+          type: "string",
+          description:
+            "Email of the person being called, used to track their engagement history. Ask the user for it before dialing.",
+        },
       },
       required: ["to_number"],
     },
@@ -159,11 +164,14 @@ export async function runToolCall(
         return `Created Retell agent "${String(args.name)}" — agent_id ${agentId}.`;
       }
       case "place_phone_call": {
+        const metadata: Record<string, unknown> = {};
+        if (chatId) metadata.chatId = chatId;
+        if (args.person_email) metadata.email = String(args.person_email);
         const { callId } = await retell.createPhoneCall({
           fromNumber: String(args.from_number ?? env.RETELL_FROM_NUMBER ?? ""),
           toNumber: String(args.to_number),
           agentId: args.agent_id ? String(args.agent_id) : undefined,
-          metadata: chatId ? { chatId } : undefined,
+          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
         });
         return `Started outbound call to ${String(args.to_number)} — call_id ${callId}.`;
       }

@@ -13,6 +13,7 @@ import { createMemoryRouter } from "./routes/memory.js";
 import { createUploadsRouter } from "./routes/uploads.js";
 import { createFilesRouter } from "./routes/files.js";
 import { createWebhookRouter } from "./routes/webhook.js";
+import { createCallsRouter } from "./routes/calls.js";
 
 export function createApp(
   opts: { ai?: AiClient; retell?: RetellClient; requireAuth?: RequestHandler } = {},
@@ -51,6 +52,7 @@ export function createApp(
   app.use(express.json());
 
   app.use("/api/chats", guard, createChatsRouter(getAi));
+  app.use("/api/calls", guard, createCallsRouter());
   app.use("/api/memory", guard, createMemoryRouter());
   app.use("/api/uploads", guard, createUploadsRouter());
   app.use("/api/files", guard, createFilesRouter());

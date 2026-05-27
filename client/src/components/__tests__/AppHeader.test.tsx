@@ -12,7 +12,7 @@ describe("AppHeader", () => {
   it("renders the title, nav link, and the Clerk user button", () => {
     render(
       <MemoryRouter>
-        <AppHeader navLink={{ to: "/memory", label: "Memory" }} />
+        <AppHeader navLinks={[{ to: "/memory", label: "Memory" }]} />
       </MemoryRouter>
     );
 

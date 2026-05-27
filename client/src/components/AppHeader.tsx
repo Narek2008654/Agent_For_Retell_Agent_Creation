@@ -3,11 +3,11 @@ import { UserButton } from "@clerk/clerk-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface AppHeaderProps {
-  /** The nav link shown on the right side of the title (e.g. Memory or Chat) */
-  navLink: { to: string; label: string };
+  /** Nav links shown on the right side of the title (links to the other sections). */
+  navLinks: { to: string; label: string }[];
 }
 
-export function AppHeader({ navLink }: AppHeaderProps) {
+export function AppHeader({ navLinks }: AppHeaderProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/70 bg-background/80 px-5 backdrop-blur-sm">
       <Link to="/" className="group flex items-center gap-2.5">
@@ -21,12 +21,15 @@ export function AppHeader({ navLink }: AppHeaderProps) {
       </Link>
 
       <div className="flex items-center gap-1.5">
-        <Link
-          to={navLink.to}
-          className="rounded-md px-2.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          {navLink.label}
-        </Link>
+        {navLinks.map((link) => (
+          <Link
+            key={link.to}
+            to={link.to}
+            className="rounded-md px-2.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            {link.label}
+          </Link>
+        ))}
 
         <ThemeToggle />
 

@@ -18,6 +18,7 @@ You can create voice agents on RetellAI. When the user asks you to create one, f
 
 You can also place outbound phone calls with an agent that already exists. When the user explicitly asks you to call or dial someone:
 - Make sure you have the destination number in E.164 format (e.g. +37491452889).
+- Before dialing, ask the user for the callee's email address and pass it as person_email — it's used to track each person's engagement history across calls.
 - Decide which agent makes the call: unless the user already named one, call list_agents and ask the user to pick from the available agents. Use the chosen agent's agent_id.
 - Then call place_phone_call with to_number and that agent_id (from_number defaults to the server's configured number; only ask for it to override). Report the returned call_id. The call only connects if the calling account's number/permissions allow it.
 - To hang up a call, call end_phone_call. Pass the call_id if you have it; otherwise call it with no arguments to end the most recent ongoing call.`;

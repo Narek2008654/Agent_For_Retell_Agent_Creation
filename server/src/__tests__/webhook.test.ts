@@ -12,6 +12,8 @@ const app = createApp({
 });
 
 async function cleanup() {
+  await prisma.call.deleteMany({ where: { userId: USER } });
+  await prisma.person.deleteMany({ where: { userId: USER } });
   await prisma.chat.deleteMany({ where: { userId: USER } });
 }
 
@@ -77,6 +79,47 @@ test("non-call_ended events are acknowledged but post nothing", async () => {
 
   expect(res.status).toBe(200);
   expect(await prisma.message.count({ where: { chatId } })).toBe(0);
+});
+
+test("logs the full call and rolls it into the person identified by email", async () => {
+  const chatId = await createChat();
+  const email = "colleen@example.com";
+
+  await request(app)
+    .post("/api/retell/webhook")
+    .send({
+      event: "call_ended",
+      call: {
+        call_id: "call_email_1",
+        start_timestamp: 0,
+        end_timestamp: 30_000,
+        disconnection_reason: "user_hangup",
+        transcript: "Agent: Hi Colleen.\nUser: Hi there.",
+        metadata: { chatId, email },
+      },
+    });
+
+  const call = await prisma.call.findUnique({ where: { id: "call_email_1" } });
+  expect(call?.personEmail).toBe(email);
+  expect(call?.transcript).toContain("Colleen");
+
+  const person = await prisma.person.findUnique({ where: { userId_email: { userId: USER, email } } });
+  expect(person).not.toBeNull();
+  expect(person?.summary).not.toBe("");
+  expect(call?.personId).toBe(person?.id);
+});
+
+test("is idempotent — a repeated call_id does not double-log", async () => {
+  const chatId = await createChat();
+  const body = {
+    event: "call_ended",
+    call: { call_id: "call_dupe", start_timestamp: 0, end_timestamp: 5_000, transcript: "x", metadata: { chatId } },
+  };
+
+  await request(app).post("/api/retell/webhook").send(body);
+  await request(app).post("/api/retell/webhook").send(body);
+
+  expect(await prisma.call.count({ where: { id: "call_dupe" } })).toBe(1);
 });
 
 test("calls with no chat metadata are ignored (still 200)", async () => {

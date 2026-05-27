@@ -14,6 +14,7 @@ import { Login } from "@/pages/Login";
 import { Signup } from "@/pages/Signup";
 import { Chat } from "@/pages/Chat";
 import { Memory } from "@/pages/Memory";
+import { Calls } from "@/pages/Calls";
 import "./index.css";
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string;
@@ -42,6 +43,8 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/signup/*" element={<Signup />} />
               <Route path="/" element={<Protected><Chat /></Protected>} />
               <Route path="/memory" element={<Protected><Memory /></Protected>} />
+              <Route path="/calls" element={<Protected><Calls /></Protected>} />
+              <Route path="/calls/:id" element={<Protected><Calls /></Protected>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>

@@ -97,3 +97,37 @@ export async function getFileBlob(token: string | null, id: string): Promise<Blo
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.blob();
 }
+
+export interface CallRow {
+  id: string;
+  personEmail: string | null;
+  toNumber: string | null;
+  status: string | null;
+  durationSec: number;
+  summary: string;
+  createdAt: string;
+}
+
+export interface CallHistoryItem {
+  id: string;
+  durationSec: number;
+  status: string | null;
+  disconnectionReason: string | null;
+  summary: string;
+  transcript: string;
+  createdAt: string;
+}
+
+export interface CallDetail {
+  call: CallHistoryItem & { personEmail: string | null; toNumber: string | null };
+  person: { email: string; summary: string } | null;
+  history: CallHistoryItem[];
+}
+
+export function getCalls(token: string | null): Promise<CallRow[]> {
+  return request<CallRow[]>("/api/calls", token);
+}
+
+export function getCall(token: string | null, id: string): Promise<CallDetail> {
+  return request<CallDetail>(`/api/calls/${id}`, token);
+}

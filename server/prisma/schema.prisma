@@ -48,3 +48,38 @@ model Memory {
   createdAt DateTime @default(now())
   // "embedding" vector(1536) column is added via raw SQL in the migration in Task 1.2
 }
+
+// A person we've called, identified by email (scoped to the operator's userId).
+model Person {
+  id        String   @id @default(cuid())
+  userId    String
+  email     String
+  summary   String   @default("") // rolling "engagement summary"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  calls     Call[]
+
+  @@unique([userId, email])
+}
+
+// One logged outbound call. `id` is Retell's call_id (idempotent on webhook retries).
+model Call {
+  id                  String   @id
+  userId              String
+  personId            String?
+  person              Person?  @relation(fields: [personId], references: [id], onDelete: SetNull)
+  chatId              String?
+  fromNumber          String?
+  toNumber            String?
+  agentId             String?
+  status              String?
+  disconnectionReason String?
+  durationSec         Int      @default(0)
+  transcript          String   @default("")
+  summary             String   @default("")
+  personEmail         String?
+  createdAt           DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([personId])
+}

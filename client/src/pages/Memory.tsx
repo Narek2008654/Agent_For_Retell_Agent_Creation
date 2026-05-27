@@ -54,7 +54,7 @@ export function Memory() {
 
   return (
     <div className="flex h-screen flex-col">
-      <AppHeader navLink={{ to: "/", label: "Chat" }} />
+      <AppHeader navLinks={[{ to: "/", label: "Chat" }, { to: "/calls", label: "Calls" }]} />
 
       <main className="flex-1 overflow-y-auto px-6 py-10">
         <div className="mx-auto max-w-2xl">

@@ -18,43 +18,101 @@ function formatDuration(seconds: number): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
+function asString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+/** A concise summary of one call's transcript (or a note that it didn't connect). */
+async function summarizeCall(ai: AiClient, transcript: string): Promise<string> {
+  if (!transcript) return "No conversation took place — the call didn't connect.";
+  return ai.complete(
+    "Summarize this phone call transcript in 2-3 sentences for the person who asked for the call. " +
+      "Be concise and factual.\n\nTranscript:\n" +
+      transcript,
+  );
+}
+
 /**
- * Handle a Retell "call_ended" webhook: summarize the call and post it as an
- * assistant message in the chat that started it (the chat id is carried in
- * call.metadata, set when we placed the call). Other events, and calls we can't
- * attribute to an existing chat, are ignored.
+ * Upsert the person (by email) and fold this call's summary into their rolling
+ * engagement summary. Returns the person id.
+ */
+async function rollUpPerson(
+  ai: AiClient,
+  userId: string,
+  email: string,
+  callSummary: string,
+): Promise<string> {
+  const existing = await prisma.person.findUnique({ where: { userId_email: { userId, email } } });
+  if (!existing) {
+    const created = await prisma.person.create({ data: { userId, email, summary: callSummary } });
+    return created.id;
+  }
+
+  const merged = await ai.complete(
+    "Update a contact's engagement summary to incorporate a new call. Keep it a few factual sentences.\n\n" +
+      `Existing summary:\n${existing.summary}\n\nLatest call summary:\n${callSummary}`,
+  );
+  await prisma.person.update({ where: { id: existing.id }, data: { summary: merged } });
+  return existing.id;
+}
+
+/**
+ * Handle a Retell "call_ended" webhook: log the full call, roll its summary into
+ * the person identified by metadata.email, and post a short note into the chat
+ * that placed it. The chat id and email are carried in call.metadata (set when
+ * we placed the call). Other events and unattributable calls are ignored.
+ * Idempotent: a repeated webhook for the same call_id is a no-op.
  */
 async function handleCallEnded(ai: AiClient, body: unknown): Promise<void> {
   const payload = body as { event?: string; call?: Record<string, unknown> };
   const call = payload.call;
   if (payload.event !== "call_ended" || !call) return;
 
+  const callId = asString(call["call_id"]);
   const metadata = call["metadata"] as Record<string, unknown> | undefined;
   const chatId = metadata?.["chatId"];
-  if (typeof chatId !== "string") return;
+  if (!callId || typeof chatId !== "string") return;
 
   const chat = await prisma.chat.findUnique({ where: { id: chatId } });
   if (!chat) return;
 
+  // A repeated webhook for the same call must not double-log or double-roll-up.
+  if (await prisma.call.findUnique({ where: { id: callId } })) return;
+
   const seconds = durationSeconds(call["start_timestamp"], call["end_timestamp"]);
-  const reason = typeof call["disconnection_reason"] === "string" ? call["disconnection_reason"] : "unknown";
-  const transcript = typeof call["transcript"] === "string" ? call["transcript"].trim() : "";
+  const reason = asString(call["disconnection_reason"]) ?? "unknown";
+  const transcript = asString(call["transcript"])?.trim() ?? "";
+  const summary = await summarizeCall(ai, transcript);
 
-  const summary = transcript
-    ? await ai.complete(
-        "Summarize this phone call transcript in 2-3 sentences for the person who asked for the call. " +
-          "Be concise and factual.\n\nTranscript:\n" +
-          transcript,
-      )
-    : "No conversation took place — the call didn't connect.";
+  const emailRaw = metadata?.["email"];
+  const email = typeof emailRaw === "string" ? emailRaw.trim().toLowerCase() : "";
+  const personId = email ? await rollUpPerson(ai, chat.userId, email, summary) : null;
 
+  await prisma.call.create({
+    data: {
+      id: callId,
+      userId: chat.userId,
+      personId,
+      chatId,
+      fromNumber: asString(call["from_number"]),
+      toNumber: asString(call["to_number"]),
+      agentId: asString(call["agent_id"]),
+      status: asString(call["call_status"]),
+      disconnectionReason: reason,
+      durationSec: seconds,
+      transcript,
+      summary,
+      personEmail: email || null,
+    },
+  });
+
+  // Notify the chat that placed the call.
   const content = [
     "Your call has ended.",
     `• Duration: ${formatDuration(seconds)}`,
     `• How it ended: ${reason}`,
     `• Summary: ${summary}`,
   ].join("\n");
-
   await prisma.message.create({ data: { chatId, role: "assistant", content } });
 }
 

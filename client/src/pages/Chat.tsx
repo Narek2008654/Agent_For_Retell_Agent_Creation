@@ -90,7 +90,7 @@ export function Chat() {
 
   return (
     <div className="flex h-screen flex-col">
-      <AppHeader navLink={{ to: "/memory", label: "Memory" }} />
+      <AppHeader navLinks={[{ to: "/memory", label: "Memory" }, { to: "/calls", label: "Calls" }]} />
       <div className="flex flex-1 overflow-hidden">
         <ChatSidebar
           selectedId={selectedId}
