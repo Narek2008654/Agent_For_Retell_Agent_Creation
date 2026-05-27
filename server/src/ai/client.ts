@@ -40,7 +40,7 @@ export function toOpenAiMessages(system: string, messages: ChatMessage[]): OpenA
 
 export interface AiClient {
   embed(text: string): Promise<number[]>;
-  chat(input: { system: string; messages: ChatMessage[] }): Promise<string>;
+  chat(input: { system: string; messages: ChatMessage[]; chatId?: string }): Promise<string>;
   complete(prompt: string): Promise<string>;
 }
 
@@ -141,7 +141,11 @@ type ToolCall = NonNullable<OpenAI.Chat.Completions.ChatCompletionMessage["tool_
  * Never throws: an unknown tool or a failure becomes text the model can read
  * and explain to the user (e.g. "I couldn't create the agent…").
  */
-export async function runToolCall(retell: RetellClient, call: ToolCall): Promise<string> {
+export async function runToolCall(
+  retell: RetellClient,
+  call: ToolCall,
+  chatId?: string,
+): Promise<string> {
   try {
     const args = JSON.parse(call.function.arguments || "{}");
     switch (call.function.name) {
@@ -159,6 +163,7 @@ export async function runToolCall(retell: RetellClient, call: ToolCall): Promise
           fromNumber: String(args.from_number ?? env.RETELL_FROM_NUMBER ?? ""),
           toNumber: String(args.to_number),
           agentId: args.agent_id ? String(args.agent_id) : undefined,
+          metadata: chatId ? { chatId } : undefined,
         });
         return `Started outbound call to ${String(args.to_number)} — call_id ${callId}.`;
       }
@@ -198,9 +203,11 @@ export function createOpenAiClient(apiKey: string, retell: RetellClient): AiClie
     async chat({
       system,
       messages,
+      chatId,
     }: {
       system: string;
       messages: ChatMessage[];
+      chatId?: string;
     }): Promise<string> {
       const convo = toOpenAiMessages(system, messages) as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
 
@@ -222,7 +229,7 @@ export function createOpenAiClient(apiKey: string, retell: RetellClient): AiClie
 
         convo.push(message);
         for (const call of message.tool_calls) {
-          const result = await runToolCall(retell, call);
+          const result = await runToolCall(retell, call, chatId);
           convo.push({ role: "tool", tool_call_id: call.id, content: result });
         }
       }

@@ -12,6 +12,7 @@ import { createChatsRouter } from "./routes/chats.js";
 import { createMemoryRouter } from "./routes/memory.js";
 import { createUploadsRouter } from "./routes/uploads.js";
 import { createFilesRouter } from "./routes/files.js";
+import { createWebhookRouter } from "./routes/webhook.js";
 
 export function createApp(
   opts: { ai?: AiClient; retell?: RetellClient; requireAuth?: RequestHandler } = {},
@@ -35,6 +36,10 @@ export function createApp(
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });
+
+  // Retell webhook: posted by Retell (not a Clerk user), so mount it before the
+  // auth guard with its own JSON parser.
+  app.use("/api/retell/webhook", express.json(), createWebhookRouter(getAi));
 
   // Determine the auth guard to use.
   // When a custom requireAuth is injected (e.g. tests), skip clerkMiddleware entirely.

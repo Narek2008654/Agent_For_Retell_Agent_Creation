@@ -12,6 +12,8 @@ const envSchema = z.object({
   RETELL_API_KEY: z.string().optional(),
   // Default Retell-registered number to place outbound calls from (E.164, e.g. +12182070114).
   RETELL_FROM_NUMBER: z.string().optional(),
+  // Optional shared secret; if set, the Retell webhook must include ?secret=… matching it.
+  RETELL_WEBHOOK_SECRET: z.string().optional(),
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.string().default("development"),
 });

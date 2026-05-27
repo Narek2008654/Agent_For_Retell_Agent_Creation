@@ -130,7 +130,7 @@ export function createStreamRouter(getAi: () => AiClient): Router {
       : null;
 
     try {
-      const full = await ai.chat({ system, messages });
+      const full = await ai.chat({ system, messages, chatId });
 
       // If the client went away, stop without writing to a dead socket.
       if (aborted) return;

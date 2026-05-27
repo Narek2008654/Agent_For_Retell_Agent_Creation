@@ -15,6 +15,8 @@ export interface CreatePhoneCallInput {
   toNumber: string;
   /** Optionally override which agent handles the call. */
   agentId?: string;
+  /** Arbitrary data stored on the call and echoed back in webhooks (e.g. { chatId }). */
+  metadata?: Record<string, unknown>;
 }
 
 export interface RetellClient {
@@ -87,6 +89,7 @@ export function createRetellClient(apiKey: string): RetellClient {
         from_number: input.fromNumber,
         to_number: input.toNumber,
         ...(input.agentId ? { override_agent_id: input.agentId } : {}),
+        ...(input.metadata ? { metadata: input.metadata } : {}),
       });
       return { callId: String(call["call_id"]) };
     },
