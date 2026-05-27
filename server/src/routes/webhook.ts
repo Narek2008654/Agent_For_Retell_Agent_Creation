@@ -82,17 +82,15 @@ async function handleCallEnded(ai: AiClient, body: unknown): Promise<void> {
   const seconds = durationSeconds(call["start_timestamp"], call["end_timestamp"]);
   const reason = asString(call["disconnection_reason"]) ?? "unknown";
   const transcript = asString(call["transcript"])?.trim() ?? "";
-  const summary = await summarizeCall(ai, transcript);
-
   const emailRaw = metadata?.["email"];
   const email = typeof emailRaw === "string" ? emailRaw.trim().toLowerCase() : "";
-  const personId = email ? await rollUpPerson(ai, chat.userId, email, summary) : null;
 
+  // Log the call FIRST, so it's saved no matter how it ended (declined,
+  // dial_failed, no answer) and even if summarizing / person rollup below fails.
   await prisma.call.create({
     data: {
       id: callId,
       userId: chat.userId,
-      personId,
       chatId,
       fromNumber: asString(call["from_number"]),
       toNumber: asString(call["to_number"]),
@@ -101,10 +99,14 @@ async function handleCallEnded(ai: AiClient, body: unknown): Promise<void> {
       disconnectionReason: reason,
       durationSec: seconds,
       transcript,
-      summary,
       personEmail: email || null,
     },
   });
+
+  // Enrich: summarize and fold into the person's rolling engagement summary.
+  const summary = await summarizeCall(ai, transcript);
+  const personId = email ? await rollUpPerson(ai, chat.userId, email, summary) : null;
+  await prisma.call.update({ where: { id: callId }, data: { summary, personId } });
 
   // Notify the chat that placed the call.
   const content = [
