@@ -138,6 +138,11 @@ const PLACE_CALL_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
           description:
             "The company the agent represents. Extract it from the agent/call description if mentioned; otherwise ask the user. Fills {{company_name}}.",
         },
+        questions: {
+          type: "string",
+          description:
+            "Specific questions for this call, only when the agent expects per-call questions ({{questions}}) — e.g. technical questions that vary by role. Fills {{questions}}.",
+        },
       },
       required: ["to_number"],
     },
@@ -238,6 +243,7 @@ export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<strin
           "caller_name",
           "caller_context",
           "company_name",
+          "questions",
         ] as const) {
           if (args[key]) vars[key] = String(args[key]);
         }
