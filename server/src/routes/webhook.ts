@@ -60,9 +60,9 @@ async function rollUpPerson(
     where: { id: existing.id },
     data: {
       summary: merged,
-      // Fill name/background only if we don't already have them.
-      ...(existing.name || !name ? {} : { name }),
-      ...(existing.background || !background ? {} : { background }),
+      // Keep what we already have; otherwise adopt the newly provided value.
+      name: existing.name ?? name,
+      background: existing.background || background,
     },
   });
   return existing.id;
