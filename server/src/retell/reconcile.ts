@@ -44,8 +44,8 @@ export async function reconcileMissedCalls(deps: ReconcileDeps): Promise<Reconci
 
   let replayed = 0;
   for (const item of items) {
-    const callId = typeof item["call_id"] === "string" ? (item["call_id"] as string) : null;
-    if (!callId) continue;
+    const callId = item["call_id"];
+    if (typeof callId !== "string") continue;
     if (await prisma.call.findUnique({ where: { id: callId } })) continue;
 
     // list-calls omits the transcript field; fetch the full payload before replay.

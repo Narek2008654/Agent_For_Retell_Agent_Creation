@@ -5,7 +5,13 @@ import { createRetellClient } from "./retell/client.js";
 import { createTwilioClient } from "./twilio/client.js";
 import { reconcileMissedCalls } from "./retell/reconcile.js";
 
-const app = createApp();
+// Build the live clients once and share them with both the HTTP app and the
+// background reconciler — avoids opening duplicate connections.
+const retell = createRetellClient(env.RETELL_API_KEY ?? "", { webhookUrl: env.RETELL_WEBHOOK_URL });
+const ai = createOpenAiClient(env.OPENAI_API_KEY ?? "", retell);
+const twilio = createTwilioClient(env.TWILIO_ACCOUNT_SID ?? "", env.TWILIO_AUTH_TOKEN ?? "");
+
+const app = createApp({ ai, retell, twilio });
 
 app.listen(env.PORT, () => {
   console.log(`Server listening on http://localhost:${env.PORT}`);
@@ -16,9 +22,6 @@ app.listen(env.PORT, () => {
 // replay anything we don't already have. Runs once shortly after startup, then
 // every RECONCILE_INTERVAL_MS.
 const RECONCILE_INTERVAL_MS = 5 * 60_000;
-const retell = createRetellClient(env.RETELL_API_KEY ?? "", { webhookUrl: env.RETELL_WEBHOOK_URL });
-const ai = createOpenAiClient(env.OPENAI_API_KEY ?? "", retell);
-const twilio = createTwilioClient(env.TWILIO_ACCOUNT_SID ?? "", env.TWILIO_AUTH_TOKEN ?? "");
 
 async function tickReconcile(): Promise<void> {
   try {
