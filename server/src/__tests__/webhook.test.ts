@@ -323,6 +323,31 @@ test("does NOT send a no-pickup SMS when the call connected normally", async () 
   expect(smsLog).toHaveLength(0);
 });
 
+test("falls back to a default template when the agent has no AgentSettings row", async () => {
+  const chatId = await createChat();
+  const agentId = "agent_no_settings";
+  // intentionally NO prisma.agentSettings.create() — covers externally-created agents
+
+  await request(app)
+    .post("/api/retell/webhook")
+    .send({
+      event: "call_ended",
+      call: {
+        call_id: "call_no_settings_1",
+        agent_id: agentId,
+        from_number: "+19018836036",
+        to_number: "+37496200819",
+        disconnection_reason: "dial_no_answer",
+        metadata: { chatId, email: "x@example.com" },
+        retell_llm_dynamic_variables: { caller_name: "Pat" },
+      },
+    });
+
+  expect(smsLog).toHaveLength(1);
+  expect(smsLog[0].body).toContain("Pat");
+  expect(smsLog[0].body).toContain("sorry we missed you");
+});
+
 test("calls with no chat metadata are ignored (still 200)", async () => {
   const res = await request(app)
     .post("/api/retell/webhook")

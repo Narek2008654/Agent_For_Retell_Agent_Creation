@@ -18,6 +18,18 @@ if (!apiKey) {
 }
 const model = process.env.CHAT_MODEL || "gpt-4o-mini";
 
+const USER_LINE_PREFIX = /^\s*user\s*:\s*/i;
+const INAUDIBLE_MARKER = /\(inaudible[^)]*\)/gi;
+
+// Mirrors userSaidSomething() in server/src/routes/webhook.ts: true if any
+// "User:" line has real content once (inaudible …) markers are stripped.
+function userSaidSomething(transcript) {
+  return transcript
+    .split("\n")
+    .filter((line) => USER_LINE_PREFIX.test(line))
+    .some((line) => line.replace(USER_LINE_PREFIX, "").replace(INAUDIBLE_MARKER, "").trim() !== "");
+}
+
 async function complete(prompt) {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -71,7 +83,14 @@ try {
   let rolling = "";
   for (const c of calls) {
     const transcript = (c.transcript ?? "").trim();
-    const callSummary = transcript ? await complete(callPrompt(transcript)) : "No conversation took place — the call didn't connect.";
+    let callSummary;
+    if (!transcript) {
+      callSummary = "No conversation took place — the call didn't connect.";
+    } else if (!userSaidSomething(transcript)) {
+      callSummary = "Outcome: call was declined or unanswered — the callee never spoke (every user turn was silence or inaudible). No information was captured.";
+    } else {
+      callSummary = await complete(callPrompt(transcript));
+    }
     await prisma.call.update({ where: { id: c.id }, data: { summary: callSummary } });
     rolling = rolling ? await complete(mergePrompt(rolling, callSummary)) : callSummary;
     console.log(`  ✓ ${c.id} (${c.disconnectionReason}, ${c.durationSec}s) → ${callSummary.length}c, rolling=${rolling.length}c`);

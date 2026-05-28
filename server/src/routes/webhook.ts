@@ -19,6 +19,12 @@ const INAUDIBLE_MARKER = /\(inaudible[^)]*\)/gi;
 /** Twilio concatenated-SMS hard limit; leaving a small safety margin. */
 const SMS_MAX_BODY = 1500;
 
+/** Used when an agent has no AgentSettings row (e.g. created outside our tool). */
+const DEFAULT_NO_PICKUP_SMS =
+  "Hi {{caller_name}}, sorry we missed you. Reply or call back when you have a moment.";
+const DEFAULT_NO_PICKUP_SMS_FOLLOWUP =
+  "Hi {{caller_name}}, sorry we missed you — {{call_reason}}. Reply or call back when you have a moment.";
+
 /** Truncate an SMS body with an ellipsis if it would exceed Twilio's limit. */
 function clampSmsBody(text: string): string {
   return text.length <= SMS_MAX_BODY ? text : text.slice(0, SMS_MAX_BODY - 1).trimEnd() + "…";
@@ -70,6 +76,12 @@ function asString(value: unknown): string | null {
  */
 async function summarizeCall(ai: AiClient, transcript: string): Promise<string> {
   if (!transcript) return "No conversation took place — the call didn't connect.";
+  // If every "User:" turn is inaudible/empty (typical when the callee declined
+  // and the agent talked into silence), don't ask the model to invent meaning —
+  // the model otherwise hallucinates an "interested / follow-up needed" outcome.
+  if (!userSaidSomething(transcript)) {
+    return "Outcome: call was declined or unanswered — the callee never spoke (every user turn was silence or inaudible). No information was captured.";
+  }
   return ai.complete(
     "Summarize this phone call so a future agent can read it and skip ground we already covered. " +
       "For every question the agent asked, write a short line capturing the caller's actual answer — " +
@@ -149,15 +161,18 @@ async function maybeSendNoPickupSms(
   const toNumber = asString(call["to_number"]);
   if (!agentId || !toNumber) return;
 
+  // No AgentSettings row (agent created outside our tool) → fall back to defaults
+  // so we still send a no-pickup SMS. An explicit empty string from the user is
+  // still respected ("they configured no SMS on purpose").
   const settings = await prisma.agentSettings.findUnique({ where: { agentId } });
-  if (!settings) return;
+  const noPickupSms = settings?.noPickupSms ?? DEFAULT_NO_PICKUP_SMS;
+  const noPickupSmsFollowup = settings?.noPickupSmsFollowup ?? DEFAULT_NO_PICKUP_SMS_FOLLOWUP;
 
   const vars = (call["retell_llm_dynamic_variables"] as Record<string, unknown>) ?? {};
   // Returning contact (we already know about them) → use the followup template
   // when one is set; first interaction → use the asks-if-interested template.
   const isReturning = !!asString(vars["caller_context"])?.trim();
-  const template =
-    (isReturning && settings.noPickupSmsFollowup) || settings.noPickupSms || settings.noPickupSmsFollowup;
+  const template = (isReturning && noPickupSmsFollowup) || noPickupSms || noPickupSmsFollowup;
   if (!template) return;
   const body = fillTemplate(template, vars).trim();
   if (!body) return;
