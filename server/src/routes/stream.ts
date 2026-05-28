@@ -141,6 +141,13 @@ export function createStreamRouter(getAi: () => AiClient): Router {
           });
           return p ? { name: p.name, background: p.background, summary: p.summary } : null;
         },
+        saveAgentSettings: async (agentId, settings) => {
+          await prisma.agentSettings.upsert({
+            where: { agentId },
+            create: { userId: req.userId!, agentId, noPickupSms: settings.noPickupSms },
+            update: { noPickupSms: settings.noPickupSms },
+          });
+        },
       });
 
       // Stream each chunk to the client as it arrives.

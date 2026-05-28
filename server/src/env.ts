@@ -14,6 +14,9 @@ const envSchema = z.object({
   RETELL_FROM_NUMBER: z.string().optional(),
   // Optional shared secret; if set, the Retell webhook must include ?secret=… matching it.
   RETELL_WEBHOOK_SECRET: z.string().optional(),
+  // Twilio creds for sending the no-pickup follow-up SMS.
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.string().default("development"),
 });

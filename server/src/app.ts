@@ -8,6 +8,8 @@ import type { AiClient } from "./ai/client.js";
 import { createOpenAiClient } from "./ai/client.js";
 import type { RetellClient } from "./retell/client.js";
 import { createRetellClient } from "./retell/client.js";
+import type { TwilioClient } from "./twilio/client.js";
+import { createTwilioClient } from "./twilio/client.js";
 import { createChatsRouter } from "./routes/chats.js";
 import { createMemoryRouter } from "./routes/memory.js";
 import { createUploadsRouter } from "./routes/uploads.js";
@@ -16,10 +18,11 @@ import { createWebhookRouter } from "./routes/webhook.js";
 import { createCallsRouter } from "./routes/calls.js";
 
 export function createApp(
-  opts: { ai?: AiClient; retell?: RetellClient; requireAuth?: RequestHandler } = {},
+  opts: { ai?: AiClient; retell?: RetellClient; twilio?: TwilioClient; requireAuth?: RequestHandler } = {},
 ) {
   let cachedAi: AiClient | undefined;
   let cachedRetell: RetellClient | undefined;
+  let cachedTwilio: TwilioClient | undefined;
 
   function getAi(): AiClient {
     return opts.ai ?? (cachedAi ??= createOpenAiClient(env.OPENAI_API_KEY ?? "", getRetell()));
@@ -27,6 +30,13 @@ export function createApp(
 
   function getRetell(): RetellClient {
     return opts.retell ?? (cachedRetell ??= createRetellClient(env.RETELL_API_KEY ?? ""));
+  }
+
+  function getTwilio(): TwilioClient {
+    return (
+      opts.twilio ??
+      (cachedTwilio ??= createTwilioClient(env.TWILIO_ACCOUNT_SID ?? "", env.TWILIO_AUTH_TOKEN ?? ""))
+    );
   }
 
   const app = express();
@@ -40,7 +50,7 @@ export function createApp(
 
   // Retell webhook: posted by Retell (not a Clerk user), so mount it before the
   // auth guard with its own JSON parser.
-  app.use("/api/retell/webhook", express.json(), createWebhookRouter(getAi));
+  app.use("/api/retell/webhook", express.json(), createWebhookRouter(getAi, getTwilio));
 
   // Determine the auth guard to use.
   // When a custom requireAuth is injected (e.g. tests), skip clerkMiddleware entirely.

@@ -2,22 +2,30 @@ import request from "supertest";
 import { createApp } from "../app.js";
 import { prisma } from "../db.js";
 import { createFakeAi } from "../ai/fakeAi.js";
+import { createFakeTwilioClient, type SendSmsInput } from "../twilio/client.js";
 import { fakeAuth } from "../test/fakeAuth.js";
 
 const USER = "user_test_webhook";
 
+const smsLog: SendSmsInput[] = [];
 const app = createApp({
   ai: createFakeAi({ complete: async () => "Caller confirmed the interview for Tuesday at 3pm." }),
+  twilio: createFakeTwilioClient({ messages: smsLog }),
   requireAuth: fakeAuth,
 });
 
 async function cleanup() {
+  smsLog.length = 0;
   await prisma.call.deleteMany({ where: { userId: USER } });
   await prisma.person.deleteMany({ where: { userId: USER } });
+  await prisma.agentSettings.deleteMany({ where: { userId: USER } });
   await prisma.chat.deleteMany({ where: { userId: USER } });
 }
 
 beforeAll(cleanup);
+beforeEach(() => {
+  smsLog.length = 0;
+});
 afterAll(async () => {
   await cleanup();
   await prisma.$disconnect();
@@ -142,6 +150,68 @@ test("is idempotent — a repeated call_id does not double-log", async () => {
   await request(app).post("/api/retell/webhook").send(body);
 
   expect(await prisma.call.count({ where: { id: "call_dupe" } })).toBe(1);
+});
+
+test("sends a no-pickup SMS when the call didn't connect and the agent has a template", async () => {
+  const chatId = await createChat();
+  const agentId = "agent_nopickup_x";
+  await prisma.agentSettings.create({
+    data: {
+      userId: USER,
+      agentId,
+      noPickupSms: "Hi {{caller_name}}, sorry we missed you about the {{position}} role at {{company_name}}.",
+    },
+  });
+
+  await request(app)
+    .post("/api/retell/webhook")
+    .send({
+      event: "call_ended",
+      call: {
+        call_id: "call_nopickup_1",
+        agent_id: agentId,
+        from_number: "+19018836036",
+        to_number: "+37496200819",
+        disconnection_reason: "dial_no_answer",
+        metadata: { chatId, email: "valer@example.com" },
+        retell_llm_dynamic_variables: {
+          caller_name: "Valer",
+          position: "Technical AI Consultant",
+          company_name: "EPAM Armenia",
+        },
+      },
+    });
+
+  expect(smsLog).toHaveLength(1);
+  expect(smsLog[0]).toMatchObject({ from: "+19018836036", to: "+37496200819" });
+  expect(smsLog[0].body).toBe(
+    "Hi Valer, sorry we missed you about the Technical AI Consultant role at EPAM Armenia.",
+  );
+});
+
+test("does NOT send a no-pickup SMS when the call connected normally", async () => {
+  const chatId = await createChat();
+  const agentId = "agent_nopickup_y";
+  await prisma.agentSettings.create({
+    data: { userId: USER, agentId, noPickupSms: "Sorry we missed you." },
+  });
+
+  await request(app)
+    .post("/api/retell/webhook")
+    .send({
+      event: "call_ended",
+      call: {
+        call_id: "call_connected_1",
+        agent_id: agentId,
+        from_number: "+19018836036",
+        to_number: "+37496200819",
+        disconnection_reason: "user_hangup",
+        transcript: "Agent: Hi.\nUser: Hi back.",
+        metadata: { chatId },
+      },
+    });
+
+  expect(smsLog).toHaveLength(0);
 });
 
 test("calls with no chat metadata are ignored (still 200)", async () => {

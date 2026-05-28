@@ -2,6 +2,24 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { env } from "../env.js";
 import type { AiClient } from "../ai/client.js";
+import type { TwilioClient } from "../twilio/client.js";
+
+/** Disconnection reasons that mean the call never reached a real person → send the no-pickup SMS. */
+const NO_PICKUP_REASONS = new Set([
+  "dial_failed",
+  "dial_no_answer",
+  "no_answer",
+  "dial_busy",
+  "voicemail_reached",
+]);
+
+/** Replace {{key}} tokens in a template with values from a vars object. */
+function fillTemplate(template: string, vars: Record<string, unknown>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => {
+    const v = vars[key];
+    return v == null ? "" : String(v);
+  });
+}
 
 /** Seconds between two epoch-millisecond timestamps (0 if missing/invalid). */
 function durationSeconds(start: unknown, end: unknown): number {
@@ -75,7 +93,35 @@ async function rollUpPerson(
  * we placed the call). Other events and unattributable calls are ignored.
  * Idempotent: a repeated webhook for the same call_id is a no-op.
  */
-async function handleCallEnded(ai: AiClient, body: unknown): Promise<void> {
+/**
+ * If the call didn't reach a real person and the agent has a configured
+ * no-pickup SMS template, send it via Twilio. Best-effort: failures are caught
+ * by the surrounding handler and don't break webhook acknowledgement.
+ */
+async function maybeSendNoPickupSms(
+  twilio: TwilioClient,
+  call: Record<string, unknown>,
+  reason: string,
+): Promise<void> {
+  if (!NO_PICKUP_REASONS.has(reason)) return;
+  const agentId = typeof call["agent_id"] === "string" ? call["agent_id"] : null;
+  const toNumber = typeof call["to_number"] === "string" ? call["to_number"] : null;
+  if (!agentId || !toNumber) return;
+
+  const settings = await prisma.agentSettings.findUnique({ where: { agentId } });
+  if (!settings?.noPickupSms) return;
+
+  const vars = (call["retell_llm_dynamic_variables"] as Record<string, unknown>) ?? {};
+  const body = fillTemplate(settings.noPickupSms, vars).trim();
+  if (!body) return;
+
+  const from = typeof call["from_number"] === "string" ? call["from_number"] : env.RETELL_FROM_NUMBER;
+  if (!from) return;
+
+  await twilio.sendSms({ from, to: toNumber, body });
+}
+
+async function handleCallEnded(ai: AiClient, twilio: TwilioClient, body: unknown): Promise<void> {
   const payload = body as { event?: string; call?: Record<string, unknown> };
   const call = payload.call;
   if (payload.event !== "call_ended" || !call) return;
@@ -130,9 +176,12 @@ async function handleCallEnded(ai: AiClient, body: unknown): Promise<void> {
     `• Summary: ${summary}`,
   ].join("\n");
   await prisma.message.create({ data: { chatId, role: "assistant", content } });
+
+  // If the call didn't reach a real person, fire the no-pickup SMS (best-effort).
+  await maybeSendNoPickupSms(twilio, call, reason).catch(() => {});
 }
 
-export function createWebhookRouter(getAi: () => AiClient): Router {
+export function createWebhookRouter(getAi: () => AiClient, getTwilio: () => TwilioClient): Router {
   const router = Router();
 
   // POST / — Retell posts call lifecycle events here. Not Clerk-authenticated
@@ -145,7 +194,7 @@ export function createWebhookRouter(getAi: () => AiClient): Router {
 
     // Always ack with 2xx — a failure on our side must not trigger Retell retries.
     try {
-      await handleCallEnded(getAi(), req.body);
+      await handleCallEnded(getAi(), getTwilio(), req.body);
     } catch {
       // best-effort: swallow and still acknowledge
     }

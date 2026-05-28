@@ -53,6 +53,8 @@ export interface AiClient {
     chatId?: string;
     /** Looks up what we know about a person by email (DB-backed, supplied by the route). */
     lookupPerson?: (email: string) => Promise<CallerInfo | null>;
+    /** Persists per-agent settings after create_retell_voice_agent (DB-backed). */
+    saveAgentSettings?: (agentId: string, settings: { noPickupSms: string }) => Promise<void>;
   }): AsyncIterable<string>;
   complete(prompt: string): Promise<string>;
 }
@@ -75,6 +77,11 @@ const CREATE_AGENT_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
         },
         greeting: { type: "string", description: "The first line the agent speaks." },
         voice_id: { type: "string" },
+        no_pickup_sms: {
+          type: "string",
+          description:
+            "Optional SMS to send the callee if the call doesn't connect (no answer, busy, voicemail, dial failed). May use {{caller_name}}, {{position}}, {{company_name}} — they'll be filled at send time.",
+        },
       },
       required: ["name", "agent_prompt", "greeting", "voice_id"],
     },
@@ -212,6 +219,8 @@ export interface ToolDeps {
   retell: RetellClient;
   chatId?: string;
   lookupPerson?: (email: string) => Promise<CallerInfo | null>;
+  /** Persist per-agent settings (e.g. the SMS to send on no pickup). */
+  saveAgentSettings?: (agentId: string, settings: { noPickupSms: string }) => Promise<void>;
 }
 
 export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<string> {
@@ -226,6 +235,9 @@ export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<strin
           greeting: String(args.greeting),
           voiceId: String(args.voice_id),
         });
+        if (args.no_pickup_sms && deps.saveAgentSettings) {
+          await deps.saveAgentSettings(agentId, { noPickupSms: String(args.no_pickup_sms) });
+        }
         return `Created Retell agent "${String(args.name)}" — agent_id ${agentId}.`;
       }
       case "place_phone_call": {
@@ -304,14 +316,16 @@ export function createOpenAiClient(apiKey: string, retell: RetellClient): AiClie
       messages,
       chatId,
       lookupPerson,
+      saveAgentSettings,
     }: {
       system: string;
       messages: ChatMessage[];
       chatId?: string;
       lookupPerson?: (email: string) => Promise<CallerInfo | null>;
+      saveAgentSettings?: (agentId: string, settings: { noPickupSms: string }) => Promise<void>;
     }): AsyncGenerator<string> {
       const convo = toOpenAiMessages(system, messages) as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
-      const deps: ToolDeps = { retell, chatId, lookupPerson };
+      const deps: ToolDeps = { retell, chatId, lookupPerson, saveAgentSettings };
 
       // Stream the reply token-by-token. The model may chain tools (e.g.
       // lookup_person → place_phone_call) before answering, so loop: stream any

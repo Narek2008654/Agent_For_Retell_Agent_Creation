@@ -37,6 +37,31 @@ describe("runToolCall", () => {
     expect(calls[0].systemPrompt).toContain("hiring manager");
   });
 
+  it("saves the no-pickup SMS template when one is provided at creation", async () => {
+    const saved: Array<{ agentId: string; noPickupSms: string }> = [];
+    const retell = createFakeRetellClient();
+
+    await runToolCall(
+      {
+        retell,
+        saveAgentSettings: async (agentId, settings) => {
+          saved.push({ agentId, noPickupSms: settings.noPickupSms });
+        },
+      },
+      toolCall("create_retell_voice_agent", {
+        name: "Support",
+        agent_prompt: "p",
+        greeting: "g",
+        voice_id: "retell-Cimo",
+        no_pickup_sms: "Hi {{caller_name}}, sorry we missed you about {{position}}.",
+      }),
+    );
+
+    expect(saved).toEqual([
+      { agentId: "agent_fake", noPickupSms: "Hi {{caller_name}}, sorry we missed you about {{position}}." },
+    ]);
+  });
+
   it("places a call with dynamic variables and caller metadata", async () => {
     const phoneCalls: CreatePhoneCallInput[] = [];
     const retell = createFakeRetellClient({ phoneCalls });
