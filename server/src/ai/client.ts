@@ -206,6 +206,45 @@ const LOOKUP_PERSON_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
 /** All tools available to the model. */
 const TOOLS = [CREATE_AGENT_TOOL, PLACE_CALL_TOOL, END_CALL_TOOL, LIST_AGENTS_TOOL, LOOKUP_PERSON_TOOL];
 
+/** The {{placeholder}} names the agent's prompt / greeting / SMS may use. */
+const ALLOWED_PLACEHOLDERS = new Set([
+  "caller_name",
+  "caller_context",
+  "position",
+  "position_details",
+  "company_name",
+  "questions",
+]);
+
+/** Common model slip-ups → the standard placeholder they meant. */
+const PLACEHOLDER_ALIASES: Record<string, string> = {
+  job_title: "position",
+  job: "position",
+  role: "position",
+  job_description: "position_details",
+  job_details: "position_details",
+  role_details: "position_details",
+  company: "company_name",
+  organization: "company_name",
+};
+
+/**
+ * Rewrite well-known synonyms to the standard placeholder names; report any
+ * remaining {{x}} tokens that don't match an allowed name so the caller can
+ * tell the model exactly what to fix.
+ */
+export function normalizePlaceholders(text: string): { text: string; unknown: string[] } {
+  const unknown = new Set<string>();
+  const out = text.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
+    if (ALLOWED_PLACEHOLDERS.has(key)) return match;
+    const alias = PLACEHOLDER_ALIASES[key];
+    if (alias) return `{{${alias}}}`;
+    unknown.add(key);
+    return match;
+  });
+  return { text: out, unknown: [...unknown] };
+}
+
 /** A single tool call the model asked for, as returned on a chat message. */
 type ToolCall = NonNullable<OpenAI.Chat.Completions.ChatCompletionMessage["tool_calls"]>[number];
 
@@ -229,14 +268,31 @@ export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<strin
     const args = JSON.parse(call.function.arguments || "{}");
     switch (call.function.name) {
       case "create_retell_voice_agent": {
+        const promptN = normalizePlaceholders(String(args.agent_prompt));
+        const greetingN = normalizePlaceholders(String(args.greeting));
+        const smsRaw = args.no_pickup_sms ? String(args.no_pickup_sms) : "";
+        const smsN = normalizePlaceholders(smsRaw);
+
+        const unknown = [
+          ...new Set([...promptN.unknown, ...greetingN.unknown, ...smsN.unknown]),
+        ];
+        if (unknown.length > 0) {
+          return (
+            `Cannot create the agent: the draft uses placeholders that aren't allowed: ${unknown
+              .map((p) => `{{${p}}}`)
+              .join(", ")}. The ONLY allowed placeholders are {{caller_name}}, {{caller_context}}, {{position}}, {{position_details}}, {{company_name}}, {{questions}}. ` +
+            `Replace each unknown placeholder with the correct standard name (e.g. {{job_title}} → {{position}}, {{job_description}} → {{position_details}}, {{company}} → {{company_name}}) in the prompt, greeting, AND the no-pickup SMS, then call create_retell_voice_agent again.`
+          );
+        }
+
         const { agentId } = await retell.createVoiceAgent({
           name: String(args.name),
-          systemPrompt: String(args.agent_prompt),
-          greeting: String(args.greeting),
+          systemPrompt: promptN.text,
+          greeting: greetingN.text,
           voiceId: String(args.voice_id),
         });
-        if (args.no_pickup_sms && deps.saveAgentSettings) {
-          await deps.saveAgentSettings(agentId, { noPickupSms: String(args.no_pickup_sms) });
+        if (smsRaw && deps.saveAgentSettings) {
+          await deps.saveAgentSettings(agentId, { noPickupSms: smsN.text });
         }
         return `Created Retell agent "${String(args.name)}" — agent_id ${agentId}.`;
       }

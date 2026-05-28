@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runToolCall } from "../client.js";
+import { runToolCall, normalizePlaceholders } from "../client.js";
 import {
   createFakeRetellClient,
   type CreateVoiceAgentInput,
@@ -35,6 +35,66 @@ describe("runToolCall", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ name: "Support", voiceId: "retell-Cimo" });
     expect(calls[0].systemPrompt).toContain("hiring manager");
+  });
+
+  it("auto-rewrites common bad placeholders on create (job_title→position, job_description→position_details, company→company_name)", async () => {
+    const made: Array<{ systemPrompt: string; greeting: string }> = [];
+    const saved: Array<{ agentId: string; noPickupSms: string }> = [];
+    const retell = createFakeRetellClient({
+      createVoiceAgent: async (input) => {
+        made.push({ systemPrompt: input.systemPrompt, greeting: input.greeting });
+        return { agentId: "agent_fake", llmId: "llm_fake" };
+      },
+    });
+
+    const result = await runToolCall(
+      {
+        retell,
+        saveAgentSettings: async (agentId, settings) => {
+          saved.push({ agentId, noPickupSms: settings.noPickupSms });
+        },
+      },
+      toolCall("create_retell_voice_agent", {
+        name: "Sofi",
+        agent_prompt: "You're calling about the {{job_title}}. Details: {{job_description}}. From {{company}}.",
+        greeting: "Hi {{caller_name}}, calling from {{company}} about the {{role}}.",
+        voice_id: "retell-Cimo",
+        no_pickup_sms: "Hi from {{company}} re {{job_title}}: {{job_description}}.",
+      }),
+    );
+
+    expect(result).toContain("Created Retell agent");
+    expect(made[0].systemPrompt).toBe(
+      "You're calling about the {{position}}. Details: {{position_details}}. From {{company_name}}.",
+    );
+    expect(made[0].greeting).toBe("Hi {{caller_name}}, calling from {{company_name}} about the {{position}}.");
+    expect(saved[0].noPickupSms).toBe("Hi from {{company_name}} re {{position}}: {{position_details}}.");
+  });
+
+  it("refuses to create when truly unknown placeholders remain, naming each one", async () => {
+    const retell = createFakeRetellClient();
+
+    const result = await runToolCall(
+      { retell },
+      toolCall("create_retell_voice_agent", {
+        name: "X",
+        agent_prompt: "Calling {{candidate_first_name}} about the {{some_made_up_thing}}.",
+        greeting: "Hi",
+        voice_id: "retell-Cimo",
+      }),
+    );
+
+    expect(result).toMatch(/Cannot create/i);
+    expect(result).toContain("{{candidate_first_name}}");
+    expect(result).toContain("{{some_made_up_thing}}");
+  });
+
+  it("normalizePlaceholders leaves allowed names alone and reports unknowns", () => {
+    const { text, unknown } = normalizePlaceholders(
+      "Hi {{caller_name}}, role: {{job_title}}, foo: {{nope}}.",
+    );
+    expect(text).toBe("Hi {{caller_name}}, role: {{position}}, foo: {{nope}}.");
+    expect(unknown).toEqual(["nope"]);
   });
 
   it("saves the no-pickup SMS template when one is provided at creation", async () => {
