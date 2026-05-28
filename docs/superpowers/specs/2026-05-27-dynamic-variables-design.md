@@ -1,4 +1,12 @@
-# Dynamic Variables + Reusable Agents — Design
+It wa in the job description TELUS Digital
+
+The call to Armen at +37496200819 has been initiated successfully. If you need any further assistance, feel free to let me know!
+
+Your call has ended. • Duration: 23s • How it ended: agent_hangup • Summary: During the call, the agent offered to discuss the Robotics AI Specialist role at TELUS Digital. However, the user was unable to communicate clearly, leading the agent to suggest it might not be the best time for the conversation. The agent concluded the call, inviting the user to reach out later if interested.
+
+Call again
+
+It seems that the agent Sofi is currently unavailable for calls. Would you like me to use a different agent, such as Emma or Razmik?# Dynamic Variables + Reusable Agents — Design
 
 Date: 2026-05-27
 Status: Approved

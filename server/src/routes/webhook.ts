@@ -63,12 +63,21 @@ function asString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-/** A concise summary of one call's transcript (or a note that it didn't connect). */
+/**
+ * Summarize one call, preserving the substance of the caller's answers so a
+ * future agent can reference them. We trade brevity for retention: each
+ * question the agent asked and how the caller answered should survive.
+ */
 async function summarizeCall(ai: AiClient, transcript: string): Promise<string> {
   if (!transcript) return "No conversation took place — the call didn't connect.";
   return ai.complete(
-    "Summarize this phone call transcript in 2-3 sentences for the person who asked for the call. " +
-      "Be concise and factual.\n\nTranscript:\n" +
+    "Summarize this phone call so a future agent can read it and skip ground we already covered. " +
+      "For every question the agent asked, write a short line capturing the caller's actual answer — " +
+      "preserve specific facts, names, numbers, dates, and stated preferences. " +
+      "Use a compact bulleted form, one bullet per question/topic. " +
+      "If a question was asked but the caller didn't answer it, say so explicitly. " +
+      "Open with a one-line outcome (interested/not / scheduled / follow-up needed).\n\n" +
+      "Transcript:\n" +
       transcript,
   );
 }
@@ -94,7 +103,12 @@ async function rollUpPerson(
   }
 
   const merged = await ai.complete(
-    "Update a contact's engagement summary to incorporate a new call. Keep it a few factual sentences.\n\n" +
+    "Merge a contact's engagement summary with a new call summary. " +
+      "Keep this as a running, growable record — do NOT compress away specific answers, facts, names, " +
+      "numbers, dates, or stated preferences from either source. " +
+      "Group by topic and dedupe overlapping points (latest answer wins if they conflict). " +
+      "Preserve the bulleted question/answer form. " +
+      "End with a short 'Open follow-ups:' section listing what's still unanswered or pending.\n\n" +
       `Existing summary:\n${existing.summary}\n\nLatest call summary:\n${callSummary}`,
   );
   await prisma.person.update({
