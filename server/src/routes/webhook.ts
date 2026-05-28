@@ -211,7 +211,10 @@ async function handleCallEnded(ai: AiClient, twilio: TwilioClient, body: unknown
   await prisma.message.create({ data: { chatId, role: "assistant", content } });
 
   // If the call didn't reach a real person, fire the no-pickup SMS (best-effort).
-  await maybeSendNoPickupSms(twilio, call, reason).catch(() => {});
+  // Log failures (e.g. missing Twilio credentials) instead of swallowing them silently.
+  await maybeSendNoPickupSms(twilio, call, reason).catch((err: unknown) => {
+    console.error("[webhook] no-pickup SMS failed:", err instanceof Error ? err.message : err);
+  });
 }
 
 export function createWebhookRouter(getAi: () => AiClient, getTwilio: () => TwilioClient): Router {
