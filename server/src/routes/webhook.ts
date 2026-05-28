@@ -104,8 +104,8 @@ async function maybeSendNoPickupSms(
   reason: string,
 ): Promise<void> {
   if (!NO_PICKUP_REASONS.has(reason)) return;
-  const agentId = typeof call["agent_id"] === "string" ? call["agent_id"] : null;
-  const toNumber = typeof call["to_number"] === "string" ? call["to_number"] : null;
+  const agentId = asString(call["agent_id"]);
+  const toNumber = asString(call["to_number"]);
   if (!agentId || !toNumber) return;
 
   const settings = await prisma.agentSettings.findUnique({ where: { agentId } });
@@ -115,7 +115,7 @@ async function maybeSendNoPickupSms(
   const body = fillTemplate(settings.noPickupSms, vars).trim();
   if (!body) return;
 
-  const from = typeof call["from_number"] === "string" ? call["from_number"] : env.RETELL_FROM_NUMBER;
+  const from = asString(call["from_number"]) ?? env.RETELL_FROM_NUMBER;
   if (!from) return;
 
   await twilio.sendSms({ from, to: toNumber, body });
