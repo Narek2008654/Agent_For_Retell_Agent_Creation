@@ -224,6 +224,45 @@ test("picks the followup SMS template when caller_context is non-empty (returnin
   expect(smsLog[0].body).toBe("Hi Valer, sorry we missed you — I had a question about your background");
 });
 
+test("sends a no-pickup SMS on user_hangup when the user never said anything real (declined / silence)", async () => {
+  const chatId = await createChat();
+  const agentId = "agent_decline_x";
+  await prisma.agentSettings.create({
+    data: {
+      userId: USER,
+      agentId,
+      noPickupSms: "Hi {{caller_name}}, interested in {{position}} at {{company_name}}?",
+      noPickupSmsFollowup: "",
+    },
+  });
+
+  await request(app)
+    .post("/api/retell/webhook")
+    .send({
+      event: "call_ended",
+      call: {
+        call_id: "call_decline_1",
+        agent_id: agentId,
+        from_number: "+19018836036",
+        to_number: "+37496200819",
+        start_timestamp: 0,
+        end_timestamp: 21_000,
+        disconnection_reason: "user_hangup",
+        transcript:
+          "Agent: Hi\nUser: (inaudible speech)\nUser: (inaudible speech)\nAgent: Sorry, I didn't catch that.",
+        metadata: { chatId, email: "albert@example.com" },
+        retell_llm_dynamic_variables: {
+          caller_name: "Albert",
+          position: "Backend Engineer",
+          company_name: "EPAM",
+        },
+      },
+    });
+
+  expect(smsLog).toHaveLength(1);
+  expect(smsLog[0].body).toBe("Hi Albert, interested in Backend Engineer at EPAM?");
+});
+
 test("does NOT send a no-pickup SMS when the call connected normally", async () => {
   const chatId = await createChat();
   const agentId = "agent_nopickup_y";

@@ -13,6 +13,20 @@ const NO_PICKUP_REASONS = new Set([
   "voicemail_reached",
 ]);
 
+/**
+ * True when the user never actually said anything meaningful — e.g. they
+ * declined the call and the agent spoke into voicemail/silence. Treats lines
+ * like "User: (inaudible speech)" as nothing.
+ */
+function userSaidSomething(transcript: string): boolean {
+  const userText = transcript
+    .split("\n")
+    .filter((line) => /^\s*user\s*:/i.test(line))
+    .map((line) => line.replace(/^\s*user\s*:\s*/i, "").replace(/\(inaudible[^)]*\)/gi, "").trim())
+    .join(" ");
+  return userText.split(/\s+/).filter(Boolean).length > 0;
+}
+
 /** Replace {{key}} tokens in a template with values from a vars object. */
 function fillTemplate(template: string, vars: Record<string, unknown>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_m, key: string) => {
@@ -103,7 +117,11 @@ async function maybeSendNoPickupSms(
   call: Record<string, unknown>,
   reason: string,
 ): Promise<void> {
-  if (!NO_PICKUP_REASONS.has(reason)) return;
+  // Send when Retell reports a no-pickup reason OR when nothing real was said
+  // (e.g. the user declined and the agent talked into silence/voicemail).
+  const transcript = asString(call["transcript"])?.trim() ?? "";
+  const noRealConversation = !userSaidSomething(transcript);
+  if (!NO_PICKUP_REASONS.has(reason) && !noRealConversation) return;
   const agentId = asString(call["agent_id"]);
   const toNumber = asString(call["to_number"]);
   if (!agentId || !toNumber) return;
