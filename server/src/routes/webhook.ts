@@ -13,18 +13,19 @@ const NO_PICKUP_REASONS = new Set([
   "voicemail_reached",
 ]);
 
+const USER_LINE_PREFIX = /^\s*user\s*:\s*/i;
+const INAUDIBLE_MARKER = /\(inaudible[^)]*\)/gi;
+
 /**
- * True when the user never actually said anything meaningful — e.g. they
- * declined the call and the agent spoke into voicemail/silence. Treats lines
- * like "User: (inaudible speech)" as nothing.
+ * True when at least one "User:" line in the transcript has real content after
+ * stripping (inaudible …) markers — i.e. the user actually said something.
+ * Treats a transcript where every user turn is "(inaudible speech)" as nothing.
  */
 function userSaidSomething(transcript: string): boolean {
-  const userText = transcript
+  return transcript
     .split("\n")
-    .filter((line) => /^\s*user\s*:/i.test(line))
-    .map((line) => line.replace(/^\s*user\s*:\s*/i, "").replace(/\(inaudible[^)]*\)/gi, "").trim())
-    .join(" ");
-  return userText.split(/\s+/).filter(Boolean).length > 0;
+    .filter((line) => USER_LINE_PREFIX.test(line))
+    .some((line) => line.replace(USER_LINE_PREFIX, "").replace(INAUDIBLE_MARKER, "").trim() !== "");
 }
 
 /** Replace {{key}} tokens in a template with values from a vars object. */
