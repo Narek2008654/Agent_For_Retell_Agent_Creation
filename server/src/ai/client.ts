@@ -230,6 +230,14 @@ const ALLOWED_PLACEHOLDERS = new Set([
   "call_reason",
 ]);
 
+/** Placeholders that are OK to leave empty at place_phone_call time. */
+const OPTIONAL_AT_CALL_TIME = new Set([
+  "caller_name",
+  "caller_context",
+  "questions",
+  "call_reason",
+]);
+
 /** Common model slip-ups → the standard placeholder they meant. */
 const PLACEHOLDER_ALIASES: Record<string, string> = {
   job_title: "position",
@@ -350,8 +358,7 @@ export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<strin
         const agentIdParam = args.agent_id ? String(args.agent_id) : undefined;
         if (agentIdParam) {
           const referenced = await retell.getRequiredVariablesForAgent(agentIdParam);
-          const SKIPPABLE = new Set(["caller_name", "caller_context", "questions", "call_reason"]);
-          const missing = referenced.filter((v) => !SKIPPABLE.has(v) && !vars[v]);
+          const missing = referenced.filter((v) => !OPTIONAL_AT_CALL_TIME.has(v) && !vars[v]);
           if (missing.length > 0) {
             return (
               `Cannot place the call: the agent's prompt expects ${missing.map((v) => `{{${v}}}`).join(", ")} but no value was supplied. ` +
