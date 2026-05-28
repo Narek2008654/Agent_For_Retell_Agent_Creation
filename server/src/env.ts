@@ -14,6 +14,9 @@ const envSchema = z.object({
   RETELL_FROM_NUMBER: z.string().optional(),
   // Optional shared secret; if set, the Retell webhook must include ?secret=… matching it.
   RETELL_WEBHOOK_SECRET: z.string().optional(),
+  // Public URL Retell should POST call lifecycle events to. Set on every agent at creation.
+  // e.g. https://your-ngrok.ngrok-free.dev/api/retell/webhook
+  RETELL_WEBHOOK_URL: z.string().optional(),
   // Twilio creds for sending the no-pickup follow-up SMS.
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),

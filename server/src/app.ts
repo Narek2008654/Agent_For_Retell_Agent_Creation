@@ -29,7 +29,12 @@ export function createApp(
   }
 
   function getRetell(): RetellClient {
-    return opts.retell ?? (cachedRetell ??= createRetellClient(env.RETELL_API_KEY ?? ""));
+    return (
+      opts.retell ??
+      (cachedRetell ??= createRetellClient(env.RETELL_API_KEY ?? "", {
+        webhookUrl: env.RETELL_WEBHOOK_URL,
+      }))
+    );
   }
 
   function getTwilio(): TwilioClient {

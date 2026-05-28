@@ -37,6 +37,35 @@ describe("createRetellClient", () => {
     expect(agentBody.agent_name).toBe("Support");
   });
 
+  it("sets webhook_url on create-agent when configured", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ llm_id: "llm_w" }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ agent_id: "agent_w" }) } as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createRetellClient("sk", { webhookUrl: "https://t.example/api/retell/webhook" })
+      .createVoiceAgent({ name: "X", systemPrompt: "p", greeting: "g", voiceId: "v" });
+
+    const agentBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(agentBody.webhook_url).toBe("https://t.example/api/retell/webhook");
+  });
+
+  it("omits webhook_url on create-agent when not configured", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ llm_id: "llm_n" }) } as Response)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ agent_id: "agent_n" }) } as Response);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createRetellClient("sk").createVoiceAgent({
+      name: "X", systemPrompt: "p", greeting: "g", voiceId: "v",
+    });
+
+    const agentBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(agentBody).not.toHaveProperty("webhook_url");
+  });
+
   it("places an outbound phone call and returns the call id", async () => {
     const fetchMock = vi
       .fn()

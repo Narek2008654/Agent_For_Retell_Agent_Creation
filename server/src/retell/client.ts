@@ -34,7 +34,10 @@ export interface RetellClient {
   getRequiredVariablesForAgent(agentId: string): Promise<string[]>;
 }
 
-export function createRetellClient(apiKey: string): RetellClient {
+export function createRetellClient(
+  apiKey: string,
+  options: { webhookUrl?: string } = {},
+): RetellClient {
   async function send(path: string, init: RequestInit): Promise<Response> {
     if (!apiKey) throw new Error("Retell API key not configured");
     // Bound each request so a slow Retell call can't hang the chat turn.
@@ -92,6 +95,8 @@ export function createRetellClient(apiKey: string): RetellClient {
         voice_id: input.voiceId,
         agent_name: input.name,
         language: "en-US",
+        // Without this, Retell never POSTs call_ended → our server never logs the call.
+        ...(options.webhookUrl ? { webhook_url: options.webhookUrl } : {}),
       });
 
       return { agentId: String(agent["agent_id"]), llmId };
