@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import { env } from "../env.js";
 import type { RetellClient } from "../retell/client.js";
+import type { BrevoClient } from "../brevo/client.js";
+import { renderJobEmail } from "../brevo/template.js";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -43,6 +45,17 @@ export interface CallerInfo {
   name: string | null;
   background: string;
   summary: string;
+}
+
+/** A sent (or failed) email to persist. */
+export interface SavedEmail {
+  toEmail: string;
+  toName?: string;
+  subject: string;
+  body: string; // rendered HTML
+  status: "sent" | "failed";
+  providerMessageId?: string;
+  error?: string;
 }
 
 export interface AiClient {
@@ -216,8 +229,38 @@ const LOOKUP_PERSON_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
   },
 };
 
+/** Tool: email a contact the details of a role after a call. */
+const SEND_EMAIL_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "send_email",
+    description:
+      "Email a contact the details of a role. Only call after a call where the contact expressed interest and is a good fit. You compose key_details and next_steps in full prose; the subject and layout are handled for you.",
+    parameters: {
+      type: "object",
+      properties: {
+        recipient_email: { type: "string", description: "The contact's email address." },
+        recipient_name: { type: "string", description: "The contact's name, for the greeting." },
+        position: { type: "string", description: "The role/position the email is about." },
+        company_name: { type: "string", description: "The company the role is at." },
+        key_details: {
+          type: "string",
+          description:
+            "The role's key details in full prose — responsibilities, requirements, compensation, and anything relevant from the call.",
+        },
+        next_steps: {
+          type: "string",
+          description:
+            "What the contact should do next, in full prose (e.g. reply to confirm, book a time, apply).",
+        },
+      },
+      required: ["recipient_email"],
+    },
+  },
+};
+
 /** All tools available to the model. */
-const TOOLS = [CREATE_AGENT_TOOL, PLACE_CALL_TOOL, END_CALL_TOOL, LIST_AGENTS_TOOL, LOOKUP_PERSON_TOOL];
+const TOOLS = [CREATE_AGENT_TOOL, PLACE_CALL_TOOL, END_CALL_TOOL, LIST_AGENTS_TOOL, LOOKUP_PERSON_TOOL, SEND_EMAIL_TOOL];
 
 /** The {{placeholder}} names the agent's prompt / greeting / SMS may use. */
 const ALLOWED_PLACEHOLDERS = new Set([
@@ -278,6 +321,7 @@ type ToolCall = NonNullable<OpenAI.Chat.Completions.ChatCompletionMessage["tool_
 /** Dependencies tool execution needs, supplied per request by the route. */
 export interface ToolDeps {
   retell: RetellClient;
+  brevo?: BrevoClient;
   chatId?: string;
   lookupPerson?: (email: string) => Promise<CallerInfo | null>;
   /** Persist per-agent settings (e.g. the no-pickup SMS templates). */
@@ -285,6 +329,8 @@ export interface ToolDeps {
     agentId: string,
     settings: { noPickupSms: string; noPickupSmsFollowup: string },
   ) => Promise<void>;
+  /** Persist a sent/failed email (DB-backed, supplied by the route). */
+  saveEmail?: (email: SavedEmail) => Promise<void>;
 }
 
 export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<string> {
@@ -397,6 +443,43 @@ export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<strin
           return `First interaction with ${email} — no record yet. Ask the user for the person's name and any background about them.`;
         }
         return `Known contact ${email}: name=${info.name ?? "unknown"}; background=${info.background || "none"}; engagement summary=${info.summary || "none"}.`;
+      }
+      case "send_email": {
+        const toEmail = String(args.recipient_email ?? "").trim().toLowerCase();
+        if (!toEmail) {
+          return "Cannot send the email: no recipient_email was provided. Ask the user for the contact's email, then call send_email again.";
+        }
+        if (!deps.brevo) return "Error: email sending is not configured.";
+        const toName = args.recipient_name ? String(args.recipient_name) : undefined;
+        const { subject, html, text } = renderJobEmail({
+          recipientName: toName,
+          position: String(args.position ?? "the role"),
+          companyName: String(args.company_name ?? ""),
+          keyDetails: String(args.key_details ?? ""),
+          nextSteps: String(args.next_steps ?? ""),
+          fromName: env.BREVO_FROM_NAME ?? "",
+        });
+        try {
+          const { messageId } = await deps.brevo.sendEmail({
+            from: { email: env.BREVO_FROM_EMAIL ?? "", name: env.BREVO_FROM_NAME ?? "" },
+            to: { email: toEmail, name: toName },
+            subject,
+            html,
+            text,
+          });
+          if (deps.saveEmail) {
+            await deps
+              .saveEmail({ toEmail, toName, subject, body: html, status: "sent", providerMessageId: messageId })
+              .catch(() => {});
+          }
+          return `Sent job-details email to ${toEmail} (message ${messageId}).`;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (deps.saveEmail) {
+            await deps.saveEmail({ toEmail, toName, subject, body: html, status: "failed", error: message }).catch(() => {});
+          }
+          return `Error: ${message}`;
+        }
       }
       default:
         return `Unknown tool: ${call.function.name}`;

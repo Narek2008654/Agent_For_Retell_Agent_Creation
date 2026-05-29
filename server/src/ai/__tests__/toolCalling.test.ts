@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { runToolCall, normalizePlaceholders } from "../client.js";
+import { runToolCall, normalizePlaceholders, type SavedEmail } from "../client.js";
+import { createFakeBrevoClient, type SendEmailInput } from "../../brevo/client.js";
 import {
   createFakeRetellClient,
   type CreateVoiceAgentInput,
@@ -288,5 +289,70 @@ describe("runToolCall", () => {
     });
     const result = await runToolCall({ retell }, toolCall("create_retell_voice_agent", {}));
     expect(result).toMatch(/Error: bad voice/);
+  });
+
+  it("sends a job-details email, lowercases the recipient, and records it", async () => {
+    const messages: SendEmailInput[] = [];
+    const saved: SavedEmail[] = [];
+    const brevo = createFakeBrevoClient({ messages });
+
+    const result = await runToolCall(
+      {
+        retell: createFakeRetellClient(),
+        brevo,
+        saveEmail: async (e) => {
+          saved.push(e);
+        },
+      },
+      toolCall("send_email", {
+        recipient_email: "Cand@Example.com",
+        recipient_name: "Cand",
+        position: "Backend Engineer",
+        company_name: "Acme",
+        key_details: "Build APIs.",
+        next_steps: "Reply to confirm.",
+      }),
+    );
+
+    expect(result).toContain("Sent job-details email to cand@example.com");
+    expect(messages).toHaveLength(1);
+    expect(messages[0].to.email).toBe("cand@example.com");
+    expect(messages[0].subject).toBe("Backend Engineer opportunity at Acme");
+    expect(saved[0]).toMatchObject({
+      toEmail: "cand@example.com",
+      status: "sent",
+      subject: "Backend Engineer opportunity at Acme",
+    });
+  });
+
+  it("returns an error and records a failure when sending fails", async () => {
+    const saved: SavedEmail[] = [];
+    const brevo = createFakeBrevoClient({
+      sendEmail: async () => {
+        throw new Error("brevo down");
+      },
+    });
+
+    const result = await runToolCall(
+      {
+        retell: createFakeRetellClient(),
+        brevo,
+        saveEmail: async (e) => {
+          saved.push(e);
+        },
+      },
+      toolCall("send_email", { recipient_email: "x@y.com", position: "Dev", company_name: "Co" }),
+    );
+
+    expect(result).toMatch(/Error: brevo down/);
+    expect(saved[0]).toMatchObject({ status: "failed", error: "brevo down" });
+  });
+
+  it("asks for the email when recipient_email is missing", async () => {
+    const result = await runToolCall(
+      { retell: createFakeRetellClient(), brevo: createFakeBrevoClient() },
+      toolCall("send_email", { position: "Dev", company_name: "Co" }),
+    );
+    expect(result).toMatch(/no recipient_email/i);
   });
 });

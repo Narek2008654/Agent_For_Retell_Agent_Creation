@@ -20,6 +20,10 @@ const envSchema = z.object({
   // Twilio creds for sending the no-pickup follow-up SMS.
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
+  // Brevo transactional email.
+  BREVO_API_KEY: z.string().optional(),
+  BREVO_FROM_EMAIL: z.string().optional(),
+  BREVO_FROM_NAME: z.string().default("Recruiting"),
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.string().default("development"),
 });
