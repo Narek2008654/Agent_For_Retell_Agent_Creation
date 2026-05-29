@@ -5,40 +5,20 @@ import { env } from "./env.js";
 import "./middleware/requireAuth.js";
 import { clerkAuth } from "./middleware/clerkAuth.js";
 import type { AiClient } from "./ai/client.js";
-import { createOpenAiClient } from "./ai/client.js";
 import type { RetellClient } from "./retell/client.js";
-import { createRetellClient } from "./retell/client.js";
 import type { TwilioClient } from "./twilio/client.js";
-import { createTwilioClient } from "./twilio/client.js";
-import { createStreamRouter } from "./routes/stream.js";
 
+/**
+ * Builds the underlying Express instance: CORS, auth middleware, health check,
+ * the JSON body parser, and path-scoped guards that populate req.userId before
+ * the Nest controllers run. Route handlers themselves live in src/nest/*.
+ *
+ * The injectable opts (ai/retell/twilio) are not consumed here — they're
+ * threaded through createTestServer / index.ts into the Nest DynamicModule.
+ */
 export function createApp(
-  opts: { ai?: AiClient; retell?: RetellClient; twilio?: TwilioClient; requireAuth?: RequestHandler } = {},
+  _opts: { ai?: AiClient; retell?: RetellClient; twilio?: TwilioClient; requireAuth?: RequestHandler } = {},
 ) {
-  let cachedAi: AiClient | undefined;
-  let cachedRetell: RetellClient | undefined;
-  let cachedTwilio: TwilioClient | undefined;
-
-  function getAi(): AiClient {
-    return opts.ai ?? (cachedAi ??= createOpenAiClient(env.OPENAI_API_KEY ?? "", getRetell()));
-  }
-
-  function getRetell(): RetellClient {
-    return (
-      opts.retell ??
-      (cachedRetell ??= createRetellClient(env.RETELL_API_KEY ?? "", {
-        webhookUrl: env.RETELL_WEBHOOK_URL,
-      }))
-    );
-  }
-
-  function getTwilio(): TwilioClient {
-    return (
-      opts.twilio ??
-      (cachedTwilio ??= createTwilioClient(env.TWILIO_ACCOUNT_SID ?? "", env.TWILIO_AUTH_TOKEN ?? ""))
-    );
-  }
-
   const app = express();
 
   app.use(cors({ origin: env.CLIENT_URL }));
@@ -48,23 +28,21 @@ export function createApp(
     res.json({ ok: true });
   });
 
-  // Retell webhook is now served by the Nest WebhookController; nothing to
-  // mount here. It stays outside the auth chain because Retell isn't a user.
+  // Retell webhook is served by the Nest WebhookController; nothing to mount
+  // here. It stays outside the auth chain because Retell isn't a Clerk user.
 
-  // Determine the auth guard to use.
-  // When a custom requireAuth is injected (e.g. tests), skip clerkMiddleware entirely.
-  const guard = opts.requireAuth ?? clerkAuth;
-  if (!opts.requireAuth) {
+  // Determine the auth guard to use. When a custom requireAuth is injected
+  // (tests), skip clerkMiddleware entirely.
+  const guard = _opts.requireAuth ?? clerkAuth;
+  if (!_opts.requireAuth) {
     app.use(clerkMiddleware());
   }
 
   app.use(express.json());
 
-  // /api/chats: Nest serves CRUD endpoints; the legacy Express router still
-  // handles POST /:id/stream (SSE), which migrates last.
-  app.use("/api/chats", guard, createStreamRouter(getAi));
-  // /api/calls and /api/memory are served by Nest controllers; the guard still
-  // runs here so req.userId is populated before the controllers handle them.
+  // Each /api/* prefix gets the guard so req.userId is populated before the
+  // Nest controllers handle the request.
+  app.use("/api/chats", guard);
   app.use("/api/calls", guard);
   app.use("/api/memory", guard);
   app.use("/api/uploads", guard);

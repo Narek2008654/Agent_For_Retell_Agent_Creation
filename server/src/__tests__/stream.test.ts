@@ -148,7 +148,7 @@ test("POST /api/chats/:id/stream returns 404 when another user streams to user1'
     .send({ content: "sneaky" });
 
   expect(res.status).toBe(404);
-  expect(res.body).toEqual({ error: "not found" });
+  expect(res.body.message).toBe("Not Found");
 });
 
 test("POST /api/chats/:id/stream links attachments and forwards image data URLs to the AI", async () => {

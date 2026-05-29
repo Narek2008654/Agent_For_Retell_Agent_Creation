@@ -9,6 +9,7 @@ import { FilesController } from "./files.controller.js";
 import { HealthController } from "./health.controller.js";
 import { MemoryController } from "./memory.controller.js";
 import { PrismaService } from "./prisma.service.js";
+import { StreamController } from "./stream.controller.js";
 import { UploadsController } from "./uploads.controller.js";
 import { AI_CLIENT, TWILIO_CLIENT } from "./tokens.js";
 import { WebhookController } from "./webhook.controller.js";
@@ -34,6 +35,7 @@ export class AppModule {
         FilesController,
         UploadsController,
         WebhookController,
+        StreamController,
       ],
       providers: [
         PrismaService,
