@@ -3,7 +3,6 @@ import request from "supertest";
 import type { Express } from "express";
 import type { INestApplication } from "@nestjs/common";
 import { createTestServer } from "../test/createTestServer.js";
-import { createApp } from "../app.js";
 import { prisma } from "../db.js";
 import { createFakeAi } from "../ai/fakeAi.js";
 import { fakeAuth } from "../test/fakeAuth.js";

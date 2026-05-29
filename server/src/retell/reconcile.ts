@@ -54,8 +54,14 @@ export async function reconcileMissedCalls(deps: ReconcileDeps): Promise<Reconci
     });
     if (!getRes.ok) continue;
     const fullCall = (await getRes.json()) as Record<string, unknown>;
-    await handleCallEnded(deps.ai, deps.twilio, { event: "call_ended", call: fullCall });
-    replayed += 1;
+    // Isolate per-call failures (e.g. a PK race when a webhook lands mid-pass)
+    // so one thrown error doesn't abort replaying the remaining calls.
+    try {
+      await handleCallEnded(deps.ai, deps.twilio, { event: "call_ended", call: fullCall });
+      replayed += 1;
+    } catch (err) {
+      console.error(`[reconcile] replay failed for ${callId}:`, err instanceof Error ? err.message : err);
+    }
   }
 
   return { checked: items.length, replayed };

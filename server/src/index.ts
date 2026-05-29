@@ -12,6 +12,9 @@ const ai = createOpenAiClient(env.OPENAI_API_KEY ?? "", retell);
 const twilio = createTwilioClient(env.TWILIO_ACCOUNT_SID ?? "", env.TWILIO_AUTH_TOKEN ?? "");
 
 const app = await bootstrap({ ai, retell, twilio });
+// Run Nest lifecycle hooks (incl. PrismaService disconnect) on process signals
+// so the shared DB pool is torn down cleanly on SIGTERM/SIGINT.
+app.enableShutdownHooks();
 await app.listen(env.PORT);
 console.log(`Server listening on http://localhost:${env.PORT}`);
 
@@ -21,12 +24,20 @@ console.log(`Server listening on http://localhost:${env.PORT}`);
 // every RECONCILE_INTERVAL_MS.
 const RECONCILE_INTERVAL_MS = 5 * 60_000;
 
+// Skip a tick while the previous one is still running so a slow reconcile
+// (many calls to replay) can't pile up overlapping passes against the same DB.
+let reconciling = false;
+
 async function tickReconcile(): Promise<void> {
+  if (reconciling) return;
+  reconciling = true;
   try {
     const r = await reconcileMissedCalls({ ai, twilio });
     if (r.replayed > 0) console.log(`[reconcile] replayed ${r.replayed} of ${r.checked} recent calls`);
   } catch (err) {
     console.error("[reconcile] failed:", err instanceof Error ? err.message : err);
+  } finally {
+    reconciling = false;
   }
 }
 

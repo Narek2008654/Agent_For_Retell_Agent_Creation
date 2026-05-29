@@ -21,9 +21,14 @@ export async function addMemory(
   const vectorLiteral = toVectorLiteral(embedding);
   const id = randomUUID();
 
+  // Skip exact (userId, content) duplicates at the statement level so durable
+  // facts re-extracted every turn don't accumulate unbounded duplicate rows.
   await prisma.$executeRawUnsafe(
     `INSERT INTO "Memory" (id, "userId", content, embedding, "createdAt")
-     VALUES ($1, $2, $3, $4::vector, now())`,
+     SELECT $1, $2, $3, $4::vector, now()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM "Memory" WHERE "userId" = $2 AND content = $3
+     )`,
     id,
     userId,
     content,

@@ -12,8 +12,21 @@ export async function streamChat(
   token: string | null,
   attachmentIds: string[],
   handlers: StreamHandlers,
+  signal?: AbortSignal,
 ): Promise<void> {
   let res: Response;
+
+  // Track whether a terminal callback has fired so we always settle the caller,
+  // even on a clean EOF with no done/error frame (proxy timeout, server restart).
+  let settled = false;
+  const onDone = () => {
+    settled = true;
+    handlers.onDone();
+  };
+  const onError = (err: string) => {
+    settled = true;
+    handlers.onError(err);
+  };
 
   try {
     res = await fetch(`${API_URL}/api/chats/${chatId}/stream`, {
@@ -24,19 +37,27 @@ export async function streamChat(
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ content, attachmentIds }),
+      signal,
     });
   } catch (err) {
-    handlers.onError(String(err));
+    // Aborting (chat switch/unmount) is intentional, not a real error.
+    if (err instanceof DOMException && err.name === "AbortError") return;
+    onError(String(err));
     return;
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    handlers.onError(`HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`);
+    onError(`HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`);
     return;
   }
 
-  const reader = res.body!.getReader();
+  if (!res.body) {
+    onError("empty response body");
+    return;
+  }
+
+  const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
 
@@ -69,14 +90,14 @@ export async function streamChat(
         const dataStr = dataLines.join("");
 
         if (eventType === "done") {
-          handlers.onDone();
+          onDone();
           return;
         } else if (eventType === "error") {
           try {
             const parsed = JSON.parse(dataStr) as { error: string };
-            handlers.onError(parsed.error);
+            onError(parsed.error);
           } catch {
-            handlers.onError(dataStr);
+            onError(dataStr);
           }
           return;
         } else {
@@ -94,8 +115,14 @@ export async function streamChat(
     // Flush any trailing bytes held by the TextDecoder (e.g. incomplete multi-byte sequences)
     buffer += decoder.decode();
   } catch (err) {
-    handlers.onError(String(err));
+    // Aborting (chat switch/unmount) is intentional, not a real error.
+    if (err instanceof DOMException && err.name === "AbortError") return;
+    onError(String(err));
   } finally {
     reader.cancel().catch(() => {});
+    // Clean EOF with no done/error frame: settle the caller so its UI doesn't
+    // stay stuck streaming forever (truncated stream surfaces as an error).
+    // An abort (chat switch/unmount) is intentional, so don't surface it.
+    if (!settled && !signal?.aborted) onError("Stream ended unexpectedly");
   }
 }

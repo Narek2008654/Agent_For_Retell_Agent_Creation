@@ -1,4 +1,5 @@
 import { prisma } from "../db.js";
+import { env } from "../env.js";
 import type { AiClient } from "../ai/client.js";
 import type { TwilioClient } from "../twilio/client.js";
 
@@ -226,8 +227,16 @@ export async function handleCallEnded(ai: AiClient, twilio: TwilioClient, body: 
   const name = asString(metadata?.["name"]);
   const background = asString(metadata?.["background"]) ?? "";
 
-  // Log the call FIRST, so it's saved no matter how it ended (declined,
-  // dial_failed, no answer) and even if summarizing / person rollup below fails.
+  // Enrich BEFORE writing the Call row: summarize and fold into the person's
+  // rolling engagement summary. If any of this throws (transient AI/DB blip),
+  // no Call row is created — so the reconciler (which skips by row existence)
+  // replays the whole call next tick instead of leaving a half-written row.
+  const summary = await summarizeCall(ai, transcript);
+  const personId = email ? await rollUpPerson(ai, chat.userId, email, summary, name, background) : null;
+
+  // Create the call row once, fully populated. Saved no matter how the call
+  // ended (declined, dial_failed, no answer) — the summary above accounts for
+  // those cases too.
   await prisma.call.create({
     data: {
       id: callId,
@@ -241,13 +250,10 @@ export async function handleCallEnded(ai: AiClient, twilio: TwilioClient, body: 
       durationSec: seconds,
       transcript,
       personEmail: email || null,
+      summary,
+      personId,
     },
   });
-
-  // Enrich: summarize and fold into the person's rolling engagement summary.
-  const summary = await summarizeCall(ai, transcript);
-  const personId = email ? await rollUpPerson(ai, chat.userId, email, summary, name, background) : null;
-  await prisma.call.update({ where: { id: callId }, data: { summary, personId } });
 
   // Notify the chat that placed the call.
   const content = [

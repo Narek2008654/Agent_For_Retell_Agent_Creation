@@ -36,4 +36,13 @@ describe("addMemory + searchMemories", () => {
     const user2Results = await searchMemories(ai, USER2_ID, "secret", 5);
     expect(user2Results).toContain("User2 secret fact");
   });
+
+  it("does not insert a duplicate row for the same (userId, content)", async () => {
+    const ai = createFakeAi();
+    const content = `duplicate fact ${randomUUID()}`;
+    await addMemory(ai, USER1_ID, content);
+    await addMemory(ai, USER1_ID, content);
+    const count = await prisma.memory.count({ where: { userId: USER1_ID, content } });
+    expect(count).toBe(1);
+  });
 });

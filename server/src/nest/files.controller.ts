@@ -18,6 +18,17 @@ export class FilesController {
     const attachment = await this.prisma.attachment.findFirst({ where: { id, userId } });
     if (!attachment || !fs.existsSync(attachment.storedPath)) throw new NotFoundException();
     res.type(attachment.mimeType);
-    fs.createReadStream(attachment.storedPath).pipe(res);
+
+    const stream = fs.createReadStream(attachment.storedPath);
+    // A stream 'error' with no handler crashes the process (there's no global
+    // exception handler for raw streams). Respond if we still can, otherwise
+    // tear the response down. Also destroy the stream if the client hangs up,
+    // so we don't leak the file descriptor.
+    stream.on("error", (err) => {
+      if (!res.headersSent) res.status(500).json({ message: "Failed to read file" });
+      else res.destroy(err);
+    });
+    res.on("close", () => stream.destroy());
+    stream.pipe(res);
   }
 }

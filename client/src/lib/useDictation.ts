@@ -81,7 +81,15 @@ export function useDictation({ onResult, onError }: UseDictationOptions) {
       setListening(false);
     };
     recognitionRef.current = recognition;
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (err) {
+      // start() can throw synchronously (e.g. already started, not-allowed). Clear
+      // the ref so the line-62 guard doesn't wedge every future start, and surface it.
+      recognitionRef.current = null;
+      onErrorRef.current?.(err instanceof Error ? err.message : "speech recognition error");
+      return;
+    }
     setListening(true);
   }
 

@@ -1,4 +1,4 @@
-import { useState, useRef, type KeyboardEvent, type DragEvent } from "react";
+import { useEffect, useState, useRef, type KeyboardEvent, type DragEvent } from "react";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,15 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
     onResult: (text) => setValue((v) => (v ? `${v} ${text}` : text)),
     onError: (message) => toast.error(message),
   });
+
+  // Revoke any still-pending preview object URLs on unmount (e.g. navigating away
+  // with unsent attachments) so blob URLs don't leak. Mirror `pending` into a ref
+  // since the unmount cleanup runs once and needs the latest value.
+  const pendingRef = useRef(pending);
+  useEffect(() => {
+    pendingRef.current = pending;
+  });
+  useEffect(() => () => pendingRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl)), []);
 
   async function uploadFiles(files: File[]) {
     const images = files.filter((f) => f.type.startsWith("image/"));

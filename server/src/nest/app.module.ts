@@ -8,7 +8,7 @@ import { ChatsController } from "./chats.controller.js";
 import { FilesController } from "./files.controller.js";
 import { HealthController } from "./health.controller.js";
 import { MemoryController } from "./memory.controller.js";
-import { PrismaService } from "./prisma.service.js";
+import { PRISMA_PROVIDER } from "./prisma.service.js";
 import { StreamController } from "./stream.controller.js";
 import { UploadsController } from "./uploads.controller.js";
 import { AI_CLIENT, RETELL_CLIENT, TWILIO_CLIENT } from "./tokens.js";
@@ -37,7 +37,7 @@ export class AppModule {
         StreamController,
       ],
       providers: [
-        PrismaService,
+        ...PRISMA_PROVIDER,
         {
           provide: RETELL_CLIENT,
           useFactory: (): RetellClient =>

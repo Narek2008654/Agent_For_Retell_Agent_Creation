@@ -415,7 +415,9 @@ export function createOpenAiClient(apiKey: string, retell: RetellClient): AiClie
         model: env.EMBEDDING_MODEL,
         input: text,
       });
-      return res.data[0].embedding;
+      const v = res.data[0]?.embedding;
+      if (!v) throw new Error("OpenAI returned no embedding");
+      return v;
     },
 
     async *chat({
@@ -478,6 +480,26 @@ export function createOpenAiClient(apiKey: string, retell: RetellClient): AiClie
           convo.push({ role: "tool", tool_call_id: call.id, content: result });
         }
       }
+
+      // We exhausted the bounded rounds while the model still wanted to call
+      // tools, so the tool results are in `convo` but no answer was streamed.
+      // Force one final completion with tools disabled so the user gets a real
+      // reply instead of silence (and the persisted assistant message isn't empty).
+      const finalStream = await openai.chat.completions.create({
+        model: env.CHAT_MODEL,
+        messages: convo,
+        tool_choice: "none",
+        stream: true,
+      });
+      let finalText = "";
+      for await (const chunk of finalStream) {
+        const piece = chunk.choices[0]?.delta?.content;
+        if (piece) {
+          finalText += piece;
+          yield piece;
+        }
+      }
+      if (!finalText) yield "Sorry, I wasn't able to complete that — please try again.";
     },
 
     async complete(prompt: string): Promise<string> {

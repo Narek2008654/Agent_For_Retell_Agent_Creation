@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/clerk-react";
 import { toast } from "sonner";
@@ -20,6 +20,9 @@ export function Chat() {
   >([]);
   const [streaming, setStreaming] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  // Aborts the in-flight stream when the chat is switched/closed or on unmount,
+  // so chat A's tokens don't bleed into chat B and the server generation stops.
+  const controllerRef = useRef<AbortController | null>(null);
 
   const { data: fetchedMessages = [] } = useQuery<Message[]>({
     queryKey: ["messages", selectedId],
@@ -27,7 +30,11 @@ export function Chat() {
     enabled: !!selectedId,
   });
 
+  // Abort any in-flight stream when the component unmounts.
+  useEffect(() => () => controllerRef.current?.abort(), []);
+
   function handleSelect(id: string) {
+    controllerRef.current?.abort();
     setSelectedId(id);
     setOptimisticMessages([]);
     setStreaming("");
@@ -35,6 +42,7 @@ export function Chat() {
   }
 
   function handleDeselect() {
+    controllerRef.current?.abort();
     setSelectedId(null);
     setOptimisticMessages([]);
     setStreaming("");
@@ -47,45 +55,72 @@ export function Chat() {
     optimisticMessages.length > 0 ? optimisticMessages : fetchedMessages;
 
   async function handleSend(text: string, attachmentIds: string[]) {
-    let chatId = selectedId;
-
-    if (!chatId) {
-      const chat = await api.createChat();
-      await queryClient.invalidateQueries({ queryKey: ["chats"] });
-      chatId = chat.id;
-      setSelectedId(chatId);
-    }
-
-    // Optimistically show user message on top of persisted ones (attached images
-    // appear once the thread refetches on done).
-    const baseMessages: { role: "user" | "assistant"; content: string }[] =
-      fetchedMessages.map((m) => ({ role: m.role, content: m.content }));
-    const withUserMessage = [...baseMessages, { role: "user" as const, content: text }];
-    setOptimisticMessages(withUserMessage);
+    // Abort any previous in-flight stream and start a fresh controller per send.
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
 
     setIsStreaming(true);
     setStreaming("");
 
-    const activeChatId = chatId;
-    const token = await getToken();
+    try {
+      let chatId = selectedId;
 
-    await streamChat(activeChatId, text, token, attachmentIds, {
-      onChunk: (chunk) => {
-        setStreaming((s) => s + chunk);
-      },
-      onDone: async () => {
-        await queryClient.invalidateQueries({ queryKey: ["messages", activeChatId] });
-        void queryClient.invalidateQueries({ queryKey: ["chats"] });
-        setOptimisticMessages([]);
-        setStreaming("");
+      if (!chatId) {
+        const chat = await api.createChat();
+        await queryClient.invalidateQueries({ queryKey: ["chats"] });
+        chatId = chat.id;
+        setSelectedId(chatId);
+      }
+
+      // Optimistically show user message on top of persisted ones (attached images
+      // appear once the thread refetches on done).
+      const baseMessages: { role: "user" | "assistant"; content: string }[] =
+        fetchedMessages.map((m) => ({ role: m.role, content: m.content }));
+      const withUserMessage = [...baseMessages, { role: "user" as const, content: text }];
+      setOptimisticMessages(withUserMessage);
+
+      const activeChatId = chatId;
+      const token = await getToken();
+
+      // Ignore callbacks for a stream whose chat is no longer active (switched/closed).
+      const isActive = () => controllerRef.current === controller && !controller.signal.aborted;
+
+      await streamChat(
+        activeChatId,
+        text,
+        token,
+        attachmentIds,
+        {
+          onChunk: (chunk) => {
+            if (!isActive()) return;
+            setStreaming((s) => s + chunk);
+          },
+          onDone: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["messages", activeChatId] });
+            void queryClient.invalidateQueries({ queryKey: ["chats"] });
+            if (!isActive()) return;
+            setOptimisticMessages([]);
+            setStreaming("");
+            setIsStreaming(false);
+          },
+          onError: (err) => {
+            if (!isActive()) return;
+            setIsStreaming(false);
+            setStreaming("");
+            toast.error(err);
+          },
+        },
+        controller.signal,
+      );
+    } catch (err) {
+      // A transient failure (createChat/getToken) must not freeze the UI forever.
+      if (controllerRef.current === controller) {
         setIsStreaming(false);
-      },
-      onError: (err) => {
-        setIsStreaming(false);
         setStreaming("");
-        toast.error(err);
-      },
-    });
+        toast.error(err instanceof Error ? err.message : String(err));
+      }
+    }
   }
 
   return (
