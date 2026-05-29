@@ -1,12 +1,15 @@
 import { Module } from "@nestjs/common";
+import { CallsController } from "./calls.controller.js";
 import { HealthController } from "./health.controller.js";
+import { PrismaService } from "./prisma.service.js";
 
 /**
- * Phase A root module: only hosts the Nest-managed surface area. Existing
- * Express routes still live in src/app.ts and are mounted via the
- * ExpressAdapter — they will migrate into controllers in Phase B.
+ * Phase B in-progress: routes migrate one at a time. Routes still in
+ * src/routes/* keep running via the ExpressAdapter; controllers listed
+ * here own their paths fully.
  */
 @Module({
-  controllers: [HealthController],
+  controllers: [HealthController, CallsController],
+  providers: [PrismaService],
 })
 export class AppModule {}
