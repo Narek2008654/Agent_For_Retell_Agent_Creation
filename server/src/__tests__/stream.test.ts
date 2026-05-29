@@ -1,11 +1,15 @@
 import fs from "node:fs";
 import request from "supertest";
+import type { Express } from "express";
+import type { INestApplication } from "@nestjs/common";
+import { createTestServer } from "../test/createTestServer.js";
 import { createApp } from "../app.js";
 import { prisma } from "../db.js";
 import { createFakeAi } from "../ai/fakeAi.js";
 import { fakeAuth } from "../test/fakeAuth.js";
 
-const app = createApp({ ai: createFakeAi(), requireAuth: fakeAuth });
+let app: Express;
+let nest: INestApplication;
 
 const USER1 = "user_test_stream_1";
 const USER2 = "user_test_stream_2";
@@ -33,6 +37,7 @@ async function cleanup() {
 
 beforeAll(async () => {
   await cleanup();
+  ({ express: app, nest } = await createTestServer({ ai: createFakeAi(), requireAuth: fakeAuth }));
   const chatRes = await request(app)
     .post("/api/chats")
     .set("x-test-user-id", USER1)
@@ -41,6 +46,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await nest.close();
   await cleanup();
   await prisma.$disconnect();
 });
@@ -146,7 +152,7 @@ test("POST /api/chats/:id/stream returns 404 when another user streams to user1'
 test("POST /api/chats/:id/stream links attachments and forwards image data URLs to the AI", async () => {
   // A fake AI that records the chat input it receives.
   let captured: { system: string; messages: import("../ai/client.js").ChatMessage[] } | null = null;
-  const capturingApp = createApp({
+  const { express: capturingApp, nest: capturingNest } = await createTestServer({
     ai: createFakeAi({
       // eslint-disable-next-line require-yield
       chat: async function* (input) {
@@ -155,6 +161,7 @@ test("POST /api/chats/:id/stream links attachments and forwards image data URLs 
     }),
     requireAuth: fakeAuth,
   });
+  try {
 
   const chatRes = await request(capturingApp)
     .post("/api/chats")
@@ -190,4 +197,7 @@ test("POST /api/chats/:id/stream links attachments and forwards image data URLs 
   const userMsg = msgs.body.find((m: { role: string }) => m.role === "user");
   expect(userMsg.attachments).toHaveLength(1);
   expect(userMsg.attachments[0].id).toBe(attachmentId);
+  } finally {
+    await capturingNest.close();
+  }
 });

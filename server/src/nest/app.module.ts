@@ -4,6 +4,7 @@ import { FilesController } from "./files.controller.js";
 import { HealthController } from "./health.controller.js";
 import { MemoryController } from "./memory.controller.js";
 import { PrismaService } from "./prisma.service.js";
+import { UploadsController } from "./uploads.controller.js";
 
 /**
  * Phase B in-progress: routes migrate one at a time. Routes still in
@@ -11,7 +12,7 @@ import { PrismaService } from "./prisma.service.js";
  * here own their paths fully.
  */
 @Module({
-  controllers: [HealthController, CallsController, MemoryController, FilesController],
+  controllers: [HealthController, CallsController, MemoryController, FilesController, UploadsController],
   providers: [PrismaService],
 })
 export class AppModule {}
