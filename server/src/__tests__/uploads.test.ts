@@ -1,11 +1,14 @@
 import fs from "node:fs";
 import request from "supertest";
-import { createApp } from "../app.js";
+import type { Express } from "express";
+import type { INestApplication } from "@nestjs/common";
+import { createTestServer } from "../test/createTestServer.js";
 import { prisma } from "../db.js";
 import { createFakeAi } from "../ai/fakeAi.js";
 import { fakeAuth } from "../test/fakeAuth.js";
 
-const app = createApp({ ai: createFakeAi(), requireAuth: fakeAuth });
+let app: Express;
+let nest: INestApplication;
 
 const USER1 = "user_test_upload_1";
 const USER2 = "user_test_upload_2";
@@ -28,8 +31,12 @@ async function cleanup() {
   await prisma.attachment.deleteMany({ where: { userId: { in: [USER1, USER2] } } });
 }
 
-beforeAll(cleanup);
+beforeAll(async () => {
+  await cleanup();
+  ({ express: app, nest } = await createTestServer({ ai: createFakeAi(), requireAuth: fakeAuth }));
+});
 afterAll(async () => {
+  await nest.close();
   await cleanup();
   await prisma.$disconnect();
 });

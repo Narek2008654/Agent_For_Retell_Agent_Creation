@@ -12,7 +12,6 @@ import type { TwilioClient } from "./twilio/client.js";
 import { createTwilioClient } from "./twilio/client.js";
 import { createChatsRouter } from "./routes/chats.js";
 import { createUploadsRouter } from "./routes/uploads.js";
-import { createFilesRouter } from "./routes/files.js";
 import { createWebhookRouter } from "./routes/webhook.js";
 
 export function createApp(
@@ -70,7 +69,7 @@ export function createApp(
   app.use("/api/calls", guard);
   app.use("/api/memory", guard);
   app.use("/api/uploads", guard, createUploadsRouter());
-  app.use("/api/files", guard, createFilesRouter());
+  app.use("/api/files", guard);
 
   return app;
 }
