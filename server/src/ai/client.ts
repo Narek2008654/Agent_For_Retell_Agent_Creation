@@ -254,7 +254,7 @@ const SEND_EMAIL_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
             "What the contact should do next, in full prose (e.g. reply to confirm, book a time, apply).",
         },
       },
-      required: ["recipient_email"],
+      required: ["recipient_email", "position", "company_name"],
     },
   },
 };
@@ -449,7 +449,7 @@ export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<strin
         if (!toEmail) {
           return "Cannot send the email: no recipient_email was provided. Ask the user for the contact's email, then call send_email again.";
         }
-        if (!deps.brevo) return "Error: email sending is not configured.";
+        if (!deps.brevo || !env.BREVO_FROM_EMAIL) return "Error: email sending is not configured.";
         const toName = args.recipient_name ? String(args.recipient_name) : undefined;
         const { subject, html, text } = renderJobEmail({
           recipientName: toName,
@@ -457,11 +457,12 @@ export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<strin
           companyName: String(args.company_name ?? ""),
           keyDetails: String(args.key_details ?? ""),
           nextSteps: String(args.next_steps ?? ""),
-          fromName: env.BREVO_FROM_NAME ?? "",
+          fromName: env.BREVO_FROM_NAME,
         });
         try {
           const { messageId } = await deps.brevo.sendEmail({
-            from: { email: env.BREVO_FROM_EMAIL ?? "", name: env.BREVO_FROM_NAME ?? "" },
+            // env.BREVO_FROM_EMAIL is guarded above; ?? "" satisfies TypeScript's narrowing.
+            from: { email: env.BREVO_FROM_EMAIL ?? "", name: env.BREVO_FROM_NAME },
             to: { email: toEmail, name: toName },
             subject,
             html,

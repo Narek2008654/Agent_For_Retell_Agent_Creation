@@ -332,20 +332,25 @@ describe("runToolCall", () => {
         throw new Error("brevo down");
       },
     });
-
-    const result = await runToolCall(
-      {
-        retell: createFakeRetellClient(),
-        brevo,
-        saveEmail: async (e) => {
-          saved.push(e);
+    const prev = process.env.BREVO_FROM_EMAIL;
+    process.env.BREVO_FROM_EMAIL = "jobs@acme.com";
+    try {
+      const result = await runToolCall(
+        {
+          retell: createFakeRetellClient(),
+          brevo,
+          saveEmail: async (e) => {
+            saved.push(e);
+          },
         },
-      },
-      toolCall("send_email", { recipient_email: "x@y.com", position: "Dev", company_name: "Co" }),
-    );
-
-    expect(result).toMatch(/Error: brevo down/);
-    expect(saved[0]).toMatchObject({ status: "failed", error: "brevo down" });
+        toolCall("send_email", { recipient_email: "x@y.com", position: "Dev", company_name: "Co" }),
+      );
+      expect(result).toMatch(/Error: brevo down/);
+      expect(saved[0]).toMatchObject({ status: "failed", error: "brevo down" });
+    } finally {
+      if (prev === undefined) delete process.env.BREVO_FROM_EMAIL;
+      else process.env.BREVO_FROM_EMAIL = prev;
+    }
   });
 
   it("asks for the email when recipient_email is missing", async () => {
