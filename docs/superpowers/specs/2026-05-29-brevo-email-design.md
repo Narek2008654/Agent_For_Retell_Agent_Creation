@@ -110,8 +110,11 @@ parameters:
   company_name    (string)
   key_details     (string)  // model-composed: responsibilities, requirements, comp, etc.
   next_steps      (string)  // model-composed: what the candidate should do next
-required: [recipient_email]
+required: [recipient_email, position, company_name]
 ```
+
+(`position` and `company_name` are required because the subject line is derived
+from them; `recipient_email` is still the primary required field.)
 
 `ToolDeps` gains:
 - `brevo: BrevoClient`
@@ -126,8 +129,10 @@ callback alongside `lookupPerson` / `saveAgentSettings`.
 1. Normalize `recipient_email` (trim + lowercase).
 2. `renderJobEmail({...args, fromName: env.BREVO_FROM_NAME})`.
 3. `brevo.sendEmail({ from: {email: env.BREVO_FROM_EMAIL, name: env.BREVO_FROM_NAME}, to: {email, name}, subject, html, text })`.
-4. On success: `deps.saveEmail?.({status:"sent", providerMessageId, toEmail, toName, subject, body:html, position, companyName})`; return
-   `"Sent job-details email to <email> (message <id>)."`.
+4. On success: `deps.saveEmail?.({status:"sent", providerMessageId, toEmail, toName, subject, body:html})`; return
+   `"Sent job-details email to <email> (message <id>)."`. (The `position` /
+   `company_name` are captured in the derived `subject`, so they aren't stored
+   as separate `Email` columns.)
 5. On failure (caught): `deps.saveEmail?.({status:"failed", error, ...})` then
    return `"Error: <message>"`. Like the other tools, **never throws** — the
    error becomes text the model reads and explains.
