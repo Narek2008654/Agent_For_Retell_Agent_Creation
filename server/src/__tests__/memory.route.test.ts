@@ -1,12 +1,15 @@
 import request from "supertest";
-import { createApp } from "../app.js";
+import type { Express } from "express";
+import type { INestApplication } from "@nestjs/common";
+import { createTestServer } from "../test/createTestServer.js";
 import { prisma } from "../db.js";
 import { createFakeAi } from "../ai/fakeAi.js";
 import { fakeAuth } from "../test/fakeAuth.js";
 import { addMemory } from "../memory/store.js";
 
 const fakeAi = createFakeAi();
-const app = createApp({ ai: fakeAi, requireAuth: fakeAuth });
+let express: Express;
+let nest: INestApplication;
 
 const USER1 = "user_test_mem_1";
 const USER2 = "user_test_mem_2";
@@ -15,9 +18,13 @@ async function cleanup() {
   await prisma.memory.deleteMany({ where: { userId: { in: [USER1, USER2] } } });
 }
 
-beforeAll(cleanup);
+beforeAll(async () => {
+  await cleanup();
+  ({ express, nest } = await createTestServer({ ai: fakeAi, requireAuth: fakeAuth }));
+});
 
 afterAll(async () => {
+  await nest.close();
   await cleanup();
   await prisma.$disconnect();
 });
@@ -26,7 +33,7 @@ test("GET /api/memory lists the authenticated user's memories", async () => {
   await addMemory(fakeAi, USER1, "User1 likes cats");
   await addMemory(fakeAi, USER1, "User1 lives in Paris");
 
-  const res = await request(app).get("/api/memory").set("x-test-user-id", USER1);
+  const res = await request(express).get("/api/memory").set("x-test-user-id", USER1);
 
   expect(res.status).toBe(200);
   expect(Array.isArray(res.body)).toBe(true);
@@ -36,7 +43,7 @@ test("GET /api/memory lists the authenticated user's memories", async () => {
 });
 
 test("GET /api/memory does not return another user's memories", async () => {
-  const res = await request(app).get("/api/memory").set("x-test-user-id", USER2);
+  const res = await request(express).get("/api/memory").set("x-test-user-id", USER2);
 
   expect(res.status).toBe(200);
   const contents = res.body.map((m: { content: string }) => m.content);
@@ -53,7 +60,7 @@ test("DELETE /api/memory/:id removes the memory for the owner", async () => {
   expect(memories.length).toBeGreaterThan(0);
   const memId = memories[0].id;
 
-  const res = await request(app)
+  const res = await request(express)
     .delete(`/api/memory/${memId}`)
     .set("x-test-user-id", USER1);
 
@@ -72,12 +79,12 @@ test("DELETE /api/memory/:id returns 404 when another user tries to delete", asy
   });
   const memId = memories[0].id;
 
-  const res = await request(app)
+  const res = await request(express)
     .delete(`/api/memory/${memId}`)
     .set("x-test-user-id", USER2);
 
   expect(res.status).toBe(404);
-  expect(res.body).toEqual({ error: "not found" });
+  expect(res.body.message).toBe("Not Found");
 
   // Row still exists
   const row = await prisma.memory.findUnique({ where: { id: memId } });

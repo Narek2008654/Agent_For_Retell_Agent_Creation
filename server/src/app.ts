@@ -11,7 +11,6 @@ import { createRetellClient } from "./retell/client.js";
 import type { TwilioClient } from "./twilio/client.js";
 import { createTwilioClient } from "./twilio/client.js";
 import { createChatsRouter } from "./routes/chats.js";
-import { createMemoryRouter } from "./routes/memory.js";
 import { createUploadsRouter } from "./routes/uploads.js";
 import { createFilesRouter } from "./routes/files.js";
 import { createWebhookRouter } from "./routes/webhook.js";
@@ -66,10 +65,10 @@ export function createApp(
   app.use(express.json());
 
   app.use("/api/chats", guard, createChatsRouter(getAi));
-  // /api/calls is served by the Nest CallsController; the guard still runs
-  // here so req.userId is populated before the controller handles it.
+  // /api/calls and /api/memory are served by Nest controllers; the guard still
+  // runs here so req.userId is populated before the controllers handle them.
   app.use("/api/calls", guard);
-  app.use("/api/memory", guard, createMemoryRouter());
+  app.use("/api/memory", guard);
   app.use("/api/uploads", guard, createUploadsRouter());
   app.use("/api/files", guard, createFilesRouter());
 
