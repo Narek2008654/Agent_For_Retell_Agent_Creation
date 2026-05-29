@@ -71,6 +71,7 @@ export interface AiClient {
       agentId: string,
       settings: { noPickupSms: string; noPickupSmsFollowup: string },
     ) => Promise<void>;
+    saveEmail?: (email: SavedEmail) => Promise<void>;
   }): AsyncIterable<string>;
   complete(prompt: string): Promise<string>;
 }
@@ -490,7 +491,7 @@ export async function runToolCall(deps: ToolDeps, call: ToolCall): Promise<strin
   }
 }
 
-export function createOpenAiClient(apiKey: string, retell: RetellClient): AiClient {
+export function createOpenAiClient(apiKey: string, retell: RetellClient, brevo: BrevoClient): AiClient {
   const openai = new OpenAI({ apiKey });
 
   return {
@@ -510,6 +511,7 @@ export function createOpenAiClient(apiKey: string, retell: RetellClient): AiClie
       chatId,
       lookupPerson,
       saveAgentSettings,
+      saveEmail,
     }: {
       system: string;
       messages: ChatMessage[];
@@ -519,9 +521,10 @@ export function createOpenAiClient(apiKey: string, retell: RetellClient): AiClie
         agentId: string,
         settings: { noPickupSms: string; noPickupSmsFollowup: string },
       ) => Promise<void>;
+      saveEmail?: (email: SavedEmail) => Promise<void>;
     }): AsyncGenerator<string> {
       const convo = toOpenAiMessages(system, messages) as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
-      const deps: ToolDeps = { retell, chatId, lookupPerson, saveAgentSettings };
+      const deps: ToolDeps = { retell, brevo, chatId, lookupPerson, saveAgentSettings, saveEmail };
 
       // Stream the reply token-by-token. The model may chain tools (e.g.
       // lookup_person → place_phone_call) before answering, so loop: stream any

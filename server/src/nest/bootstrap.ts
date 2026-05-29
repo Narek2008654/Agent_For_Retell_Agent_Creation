@@ -8,6 +8,7 @@ import { env } from "../env.js";
 import type { AiClient } from "../ai/client.js";
 import type { RetellClient } from "../retell/client.js";
 import type { TwilioClient } from "../twilio/client.js";
+import type { BrevoClient } from "../brevo/client.js";
 import { clerkAuth } from "../middleware/clerkAuth.js";
 import "../middleware/requireAuth.js";
 import { AppModule } from "./app.module.js";
@@ -16,6 +17,7 @@ export interface BootstrapOptions {
   ai?: AiClient;
   retell?: RetellClient;
   twilio?: TwilioClient;
+  brevo?: BrevoClient;
   /** Override the auth guard (tests use fakeAuth). Defaults to clerkAuth. */
   requireAuth?: RequestHandler;
   /** Suppress Nest startup logs (tests). */
@@ -45,7 +47,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<NestExpres
   for (const path of AUTH_PATHS) expressInstance.use(path, guard);
 
   const app = await NestFactory.create<NestExpressApplication>(
-    AppModule.register({ ai: opts.ai, retell: opts.retell, twilio: opts.twilio }),
+    AppModule.register({ ai: opts.ai, retell: opts.retell, twilio: opts.twilio, brevo: opts.brevo }),
     new ExpressAdapter(expressInstance),
     opts.silent ? { logger: false } : {},
   );

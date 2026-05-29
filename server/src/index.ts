@@ -2,16 +2,18 @@ import { env } from "./env.js";
 import { createOpenAiClient } from "./ai/client.js";
 import { createRetellClient } from "./retell/client.js";
 import { createTwilioClient } from "./twilio/client.js";
+import { createBrevoClient } from "./brevo/client.js";
 import { reconcileMissedCalls } from "./retell/reconcile.js";
 import { bootstrap } from "./nest/bootstrap.js";
 
 // Build the live clients once and share them with both the Nest app and the
 // background reconciler — avoids opening duplicate connections.
 const retell = createRetellClient(env.RETELL_API_KEY ?? "", { webhookUrl: env.RETELL_WEBHOOK_URL });
-const ai = createOpenAiClient(env.OPENAI_API_KEY ?? "", retell);
+const brevo = createBrevoClient(env.BREVO_API_KEY ?? "");
+const ai = createOpenAiClient(env.OPENAI_API_KEY ?? "", retell, brevo);
 const twilio = createTwilioClient(env.TWILIO_ACCOUNT_SID ?? "", env.TWILIO_AUTH_TOKEN ?? "");
 
-const app = await bootstrap({ ai, retell, twilio });
+const app = await bootstrap({ ai, retell, twilio, brevo });
 // Run Nest lifecycle hooks (incl. PrismaService disconnect) on process signals
 // so the shared DB pool is torn down cleanly on SIGTERM/SIGINT.
 app.enableShutdownHooks();
