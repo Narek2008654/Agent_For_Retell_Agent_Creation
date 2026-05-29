@@ -19,6 +19,8 @@ function escapeHtml(s: string): string {
 function paragraphs(text: string): string {
   return text
     .split(/\n{2,}/)
+    .map((block) => block.trimEnd())
+    .filter((block) => block.trim() !== "")
     .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br>")}</p>`)
     .join("\n");
 }

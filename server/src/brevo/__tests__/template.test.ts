@@ -42,4 +42,15 @@ describe("renderJobEmail", () => {
     expect(text).toContain("Reply to confirm.");
     expect(text).toContain("Acme Talent");
   });
+
+  it("renders no paragraph for an empty body field", () => {
+    const { html } = renderJobEmail({ ...base, keyDetails: "" });
+    expect(html).not.toContain("<p></p>");
+  });
+
+  it("does not emit a trailing <br> for a trailing newline", () => {
+    const { html } = renderJobEmail({ ...base, nextSteps: "Reply to confirm.\n" });
+    expect(html).toContain("<p>Reply to confirm.</p>");
+    expect(html).not.toContain("Reply to confirm.<br>");
+  });
 });
